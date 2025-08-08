@@ -1,0 +1,645 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure 4 plots
+
+# ===============================
+#  Script for Figure 4a plots
+# ===============================
+
+## -------  Analysis of the correlations for latitude -------
+setwd("/path/to/working/directory/")
+
+load("~/path/to/working/directory/Calculated_Correlations_For_Upset.RData")
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+##
+
+# Data set that I need for all the SNP on a chromosome = model_stats_latitude_df
+# List of only significant SNPs = significant_latitude
+
+# Add CHROM and POS columns to the significant_week dataset
+model_stats_latitude_df$Allele <- sub("^X", "", model_stats_latitude_df$Allele)
+
+model_stats_latitude_df <- model_stats_latitude_df %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+# Add CHROM and POS columns to the significant_week dataset
+significant_latitude <- significant_latitude %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+# Find how many unique chromosomes are present in the significant_week dataset
+unique(significant_latitude$CHROM)
+# [1] 12 16 17  5
+
+# Subset the model_stats_week_df dataset to only include the unique chromosomes found in the significant_week dataset
+model_stats_latitude_df_subset <- model_stats_latitude_df %>%
+  filter(CHROM %in% unique(significant_latitude$CHROM))
+
+unique(model_stats_latitude_df_subset$CHROM)
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Create individual plots for each chromosome
+ggplot(model_stats_latitude_df_subset, aes(x = POS, y = -log10(Latitude_p_adj))) +
+  geom_point(aes(color = Latitude_p_adj < 0.05)) +  # Color points based on significance
+  scale_color_manual(values = c("black", "red")) +  # Define colors for points
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "blue") +  # Add significance cutoff line
+  facet_wrap(~ CHROM, scales = "free_x", ncol = 1) +
+  labs(title = "Significance of SNPs by Chromosome",
+       x = "Position (POS)",
+       y = "-log10 Adjusted P-value (Latitude_p_adj)",
+       color = "Significant") +
+  theme_classic()
+
+# Load necessary libraries
+library(dplyr)
+library(circlize)
+
+# Prepare the data for the circos plot
+model_stats_latitude_df_subset <- model_stats_latitude_df_subset %>%
+  mutate(Significant = Latitude_p_adj < 0.05) %>%
+  filter(!is.na(Latitude_p_adj))  # Filter out rows with NA values
+
+# Initialize the circos plot
+circos.clear()
+circos.par(start.degree = 90, gap.degree = 5)  # Increase gap.degree to add more space between panels
+circos.initialize(factors = as.factor(model_stats_latitude_df_subset$CHROM), x = model_stats_latitude_df_subset$POS)
+
+# Add the outer ring with significance of SNPs
+circos.trackPlotRegion(factors = as.factor(model_stats_latitude_df_subset$CHROM), y = -log10(model_stats_latitude_df_subset$Latitude_p_adj), 
+                       panel.fun = function(x, y) {
+                         chr = get.cell.meta.data("sector.index")
+                         idx = model_stats_latitude_df_subset$CHROM == chr
+                         circos.points(model_stats_latitude_df_subset$POS[idx], -log10(model_stats_latitude_df_subset$Latitude_p_adj[idx]), 
+                                       col = ifelse(model_stats_latitude_df_subset$Significant[idx], "red", "black"), pch = 16, cex = 0.5)
+                         circos.lines(model_stats_latitude_df_subset$POS[idx], rep(-log10(0.05), sum(idx)), col = "blue", lty = 2)
+                         circos.axis(h = "top", labels.cex = 0.6)
+                         circos.yaxis(at = seq(0, max(-log10(model_stats_latitude_df_subset$Latitude_p_adj), na.rm = TRUE), by = 5), labels.cex = 0.6)
+                         circos.text(CELL_META$xcenter, CELL_META$ylim[2] + mm_y(10), labels = chr, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+                       }, ylim = c(0, max(-log10(model_stats_latitude_df_subset$Latitude_p_adj), na.rm = TRUE)), bg.border = NA)
+
+# Add a title
+title("Significance of SNPs by Chromosome (Circos Plot)")
+
+
+## -------  Generate the data for correlation heatmaps -------
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(gridExtra)
+library(tidyr)
+
+# Function to split and order alleles
+order_alleles <- function(alleles) {
+  split_alleles <- strsplit(alleles, "_")
+  chrom_pos <- do.call(rbind, split_alleles)
+  chrom_pos <- as.data.frame(chrom_pos)
+  chrom_pos$V1 <- as.numeric(chrom_pos$V1)
+  chrom_pos$V2 <- as.numeric(chrom_pos$V2)
+  ordered_indices <- order(chrom_pos$V1, chrom_pos$V2)
+  return(alleles[ordered_indices])
+}
+
+# Extract significant alleles
+significant_alleles_overlap <- unique(c(significant_latitude$Allele, significant_week$Allele, significant_Temp$Allele, significant_salinity$Allele))
+significant_latitude_alleles <- significant_latitude$Allele
+
+# Remove the "X" prefix from the column names of merged_data_FINAL
+colnames(merged_data_FINAL) <- sub("^X", "", colnames(merged_data_FINAL))
+
+# Ensure allele names in transposed data match those in significant lists
+allele_names <- colnames(merged_data_FINAL)[-c(1:10)]  # Exclude non-allele columns
+
+# Filter transposed data for significant alleles in Latitude and WeekNUM
+latitude_subset_alleles <- order_alleles(allele_names[allele_names %in% significant_latitude_alleles])
+
+# Subset data
+latitude_subset_data <- merged_data_FINAL[, c("LATITUDE", latitude_subset_alleles)]
+
+# Calculate correlation matrices
+latitude_allele_freq_data <- latitude_subset_data[, -1]  # Exclude Latitude column
+correlation_matrix_latitude <- cor(latitude_allele_freq_data, use = "pairwise.complete.obs")
+
+# Melt correlation matrices for ggplot2
+correlation_melted_latitude <- melt(correlation_matrix_latitude, varnames = c("Allele_1", "Allele_2"), value.name = "Correlation")
+
+# Create columns for Chromosome information
+correlation_melted_latitude$Chrom_1 <- as.numeric(sub("_.*", "", correlation_melted_latitude$Allele_1))
+correlation_melted_latitude$Chrom_2 <- as.numeric(sub("_.*", "", correlation_melted_latitude$Allele_2))
+
+# Create a new dataset with absolute values of the Correlation column
+correlation_melted_latitude_abs <- correlation_melted_latitude
+
+# Apply the absolute value function to the Correlation column
+correlation_melted_latitude_abs$Correlation <- abs(correlation_melted_latitude_abs$Correlation)
+
+# Subset data for inter-chromosomal correlations
+inter_chromosomal <- subset(correlation_melted_latitude_abs, Chrom_1 != Chrom_2)
+
+# Replace any NA values in the Correlation column with 0
+inter_chromosomal$Correlation[is.na(inter_chromosomal$Correlation)] <- 0
+
+
+## -------  Prepare the data for the circos plot -------
+
+# Load necessary libraries
+library(dplyr)
+library(circlize)
+library(reshape2)
+library(ComplexHeatmap)
+library(tidyr)  
+
+# Load tidyr for the separate function
+
+# Data set that I need for all the SNP on a chromosome = model_stats_latitude_df
+# List of only significant SNPs = significant_latitude
+
+# Add CHROM and POS columns to the model_stats_latitude_df dataset
+model_stats_latitude_df$Allele <- sub("^X", "", model_stats_latitude_df$Allele)
+
+model_stats_latitude_df <- model_stats_latitude_df %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+# Add CHROM and POS columns to the significant_latitude dataset
+significant_latitude <- significant_latitude %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+# Find how many unique chromosomes are present in the significant_latitude dataset
+unique_chromosomes <- unique(significant_latitude$CHROM)
+
+# Subset the model_stats_latitude_df dataset to only include the unique chromosomes found in the significant_latitude dataset
+model_stats_latitude_df_subset <- model_stats_latitude_df %>%
+  filter(CHROM %in% unique_chromosomes)
+
+# Prepare the data for the circos plot
+model_stats_latitude_df_subset <- model_stats_latitude_df_subset %>%
+  mutate(Significant = Latitude_p_adj < 0.05) %>%
+  filter(!is.na(Latitude_p_adj))  # Filter out rows with NA values
+
+# Separate Allele_1 and Allele_2 into CHROM and POS components in the inter_chromosomal dataset
+inter_chromosomal <- correlation_melted_latitude %>%
+  separate(Allele_1, into = c("CHROM_1", "POS_1"), sep = "_", convert = TRUE) %>%
+  separate(Allele_2, into = c("CHROM_2", "POS_2"), sep = "_", convert = TRUE)
+
+# Filter for significant inter-chromosomal correlations (e.g., Correlation > 0.2 or Correlation < -0.2)
+significant_inter_chromosomal <- inter_chromosomal %>%
+  filter(abs(Correlation) > 0.2 & CHROM_1 != CHROM_2)
+
+
+## -------  Plot the circos plot -------
+
+# Set the output to a high-resolution PNG file
+png("circos_plot_high_res.png", width = 4000, height = 4000, res = 300)  # Adjust width, height, and resolution as needed
+
+# Generate the circos plot
+circos.clear()
+circos.par(start.degree = 90, gap.degree = 5, track.margin = c(0.03, 0.03), cell.padding = c(0.04, 0.04, 0.04, 0.04))
+circos.initialize(factors = as.factor(model_stats_latitude_df_subset$CHROM), x = model_stats_latitude_df_subset$POS)
+
+# Add the outer ring with significance of SNPs
+circos.trackPlotRegion(factors = as.factor(model_stats_latitude_df_subset$CHROM), y = -log10(model_stats_latitude_df_subset$Latitude_p_adj), 
+                       panel.fun = function(x, y) {
+                         chr = get.cell.meta.data("sector.index")
+                         idx = model_stats_latitude_df_subset$CHROM == chr
+                         circos.points(model_stats_latitude_df_subset$POS[idx], -log10(model_stats_latitude_df_subset$Latitude_p_adj[idx]), 
+                                       col = ifelse(model_stats_latitude_df_subset$Significant[idx], "red", "black"), pch = 16, cex = 0.5)
+                         circos.lines(model_stats_latitude_df_subset$POS[idx], rep(-log10(0.05), sum(idx)), col = "blue", lty = 2)
+                         circos.axis(h = "top", labels.cex = 0.6)
+                         circos.yaxis(at = seq(0, max(-log10(model_stats_latitude_df_subset$Latitude_p_adj), na.rm = TRUE), by = 5), labels.cex = 0.6)
+                         circos.text(CELL_META$xcenter, CELL_META$ylim[2] + mm_y(10), labels = chr, facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.5))
+                       }, ylim = c(0, max(-log10(model_stats_latitude_df_subset$Latitude_p_adj), na.rm = TRUE)), bg.border = NA)
+
+# Add the inner circle with significant inter-chromosomal correlations shaded by level of Correlation
+for (i in 1:nrow(significant_inter_chromosomal)) {
+  circos.link(
+    significant_inter_chromosomal$CHROM_1[i], significant_inter_chromosomal$POS_1[i], 
+    significant_inter_chromosomal$CHROM_2[i], significant_inter_chromosomal$POS_2[i], 
+    col = colorRamp2(c(0, 0.5, 1), c("#ffffbf80", "#abdda480", "#2b83ba80"))(abs(significant_inter_chromosomal$Correlation[i])), 
+    lwd = 2
+  )
+}
+
+# Add a title
+title("Latitude")
+
+# Close the PNG device
+dev.off()
+
+##
+
+# Add a gradient legend for the inner ring's gradient
+lgd <- Legend(at = seq(0, 1, by = 0.2), col_fun = colorRamp2(c(0, 0.5, 1), c("#ffffbf","#abdda4","#2b83ba")), 
+              title = "Correlation", direction = "horizontal", grid_height = unit(2, "mm"), 
+              grid_width = unit(10, "mm"), labels_gp = gpar(fontsize = 8))
+
+# Draw the legend separately
+grid.newpage()
+pushViewport(viewport(x = unit(0.5, "npc"), y = unit(0.1, "npc"), width = unit(0.8, "npc"), height = unit(0.1, "npc"), just = c("center", "bottom")))
+draw(lgd, just = "center")
+popViewport()
+
+
+## -------  Annotat the significant latitude SNPs with the gene names -------
+
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+significant_latitude_strict <- significant_latitude %>%
+  filter(-log10(Latitude_p_adj) > 15)
+
+# Load SNP data
+SpringOutl_anno <- significant_latitude[, c(5, 6)]
+
+# Convert CHROM and POS to numeric
+SpringOutl_anno$CHR <- as.numeric(SpringOutl_anno$CHROM)
+SpringOutl_anno$POS <- as.numeric(SpringOutl_anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = SpringOutl_anno$CHR,
+                  ranges = IRanges(start = SpringOutl_anno$POS, end = SpringOutl_anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/working/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(SpringOutl_anno$CHR)
+
+chr_annotations <- subset(cluhar_v2.0.2_gtf, seqnames(cluhar_v2.0.2_gtf) %in% c("1", "10", "11", "12", "15", "16", "17", "18", "23", "4", "5"))
+gtf_GR <- as(chr_annotations, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates based on unique combinations of SNP_Chr and SNP_Pos
+snp_annotations_genes <- snp_annotations_genes %>%
+  distinct(SNP_Chr, SNP_Pos, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes)
+
+
+# Export significant SNPs for Spring to a CSV file
+write.table(
+  snp_annotations_genes,
+  "/path/to/working/directory/Significant_SNPs_Latitude_ANNOTATED.txt",
+  row.names = FALSE
+)
+
+write.table(
+  significant_latitude,
+  "/path/to/working/directory/Significant_SNPs_Latitude_RAW.txt",
+  row.names = FALSE
+)
+
+# Now we want to visualise the allele frequencies of the significant SNPs across latitude
+
+ # Create a new column CHROM_POS in snp_annotations_genes
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+snp_annotations_genes$SNP_Chr <- as.character(snp_annotations_genes$SNP_Chr)
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+# Identify matching columns in Correlation_data
+matching_columns <- intersect(colnames(Correlation_data), snp_annotations_genes$CHROM_POS)
+
+# Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
+filtered_data <- Correlation_data[, c(3:10)]
+filtered_data2 <- Correlation_data[, c(matching_columns)]
+
+# Combine filtered_data and filtered_data2 into a single dataset
+final_filtered_data <- cbind(filtered_data, filtered_data2)
+
+# View the structure of the combined dataset
+str(final_filtered_data)
+
+
+# ===============================
+#  Script for Figure 4b plots
+# ===============================
+
+# Identify allele frequency columns (columns 9 onwards)
+allele_columns <- colnames(final_filtered_data)[9:ncol(final_filtered_data)]
+
+# Polarize the allele frequency data
+for (col in allele_columns) {
+  # Calculate the mean allele frequency for the column
+  mean_freq <- mean(final_filtered_data[[col]], na.rm = TRUE)
+  
+  # If the mean is less than 0.5, apply the transformation
+  if (mean_freq < 0.5) {
+    final_filtered_data[[col]] <- abs(1 - final_filtered_data[[col]])
+  }
+}
+
+# Generate a heatmap of the allele frequencies across latitude
+# Extract CHROM and POS from SNP names
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Extract CHROM and POS from SNP names and sort by CHROM and POS
+data_long <- final_filtered_data %>%
+  pivot_longer(
+    cols = 9:ncol(final_filtered_data),  # Columns 9 onwards are allele frequencies
+    names_to = "SNP",                   # Create a column for SNP names
+    values_to = "Frequency"             # Create a column for allele frequencies
+  ) %>%
+  separate(SNP, into = c("CHROM", "POS"), sep = "_", convert = TRUE) %>%  # Split SNP into CHROM and POS
+  arrange(CHROM, POS)  # Sort by CHROM and POS
+
+# Create a new factor column for SNPs ordered by CHROM and POS
+data_long <- data_long %>%
+  mutate(SNP_Factor = factor(interaction(CHROM, POS), levels = unique(interaction(CHROM, POS))))
+
+# Ensure Sample is ordered by LATITUDE within reversed KMeansCluster order
+data_long <- data_long %>%
+  mutate(KMeansCluster = factor(KMeansCluster, levels = rev(sort(unique(KMeansCluster)))),  # Reverse KMeansCluster order
+         Sample = factor(Sample, levels = unique(Sample[order(KMeansCluster, LATITUDE)])))  # Order Sample by reversed KMeansCluster and LATITUDE
+
+# Plot the heatmap with facet_wrap for KMeansCluster
+ggplot(data_long, aes(x = SNP_Factor, y = Sample, fill = Frequency)) +
+  geom_tile() +  # Create the heatmap
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5, na.value = "grey") +  # Color gradient for allele frequencies
+  labs(
+    title = "Heatmap of Polarized Allele Frequencies by KMeansCluster",
+    x = "SNP (CHROM_POS)",
+    y = "Sample (Ordered by Latitude)",
+    fill = "Frequency"
+  ) +
+  facet_wrap(~ KMeansCluster, scales = "free_y", ncol = 1) +  # Separate panels for each KMeansCluster
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 2),  # Rotate x-axis labels for readability
+    axis.text.y = element_text(size = 8),
+    panel.grid = element_blank()
+  )
+
+# ===============================
+#  Script for Figure 4c plots
+# ===============================
+# Generate a smoothed line plot of allele frequencies across latitude
+
+# Chromosome inversion regions
+chromosome_inversion_regions <- list(
+  "6" = c(22282765, 24868581),
+  "12" = c(17826318, 25603093),
+  "17" = c(25805445, 27568511),
+  "23" = c(16226443, 17604273)
+)
+
+
+# Reshape the data into a long format for plotting
+data_long <- final_filtered_data %>%
+  pivot_longer(
+    cols = 9:ncol(final_filtered_data),  # Columns 9 onwards are allele frequencies
+    names_to = "SNP",                   # Create a column for SNP names
+    values_to = "Frequency"             # Create a column for allele frequencies
+  )
+
+# Plot the data without a legend
+ggplot(data_long, aes(x = LATITUDE, y = Frequency, group = SNP, color = SNP)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Polarized Allele Frequencies Across Latitude",
+    x = "Latitude",
+    y = "Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")  # Remove the legend
+
+
+
+
+#&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&#
+########################################################### 
+# Create a mapping of SNP to Gene_Name
+# Use base R to select columns and create the SNP column
+snp_to_gene_mapping <- snp_annotations_genes[, c("SNP_Chr", "SNP_Pos", "Gene_Name")]
+snp_to_gene_mapping$SNP <- paste(snp_to_gene_mapping$SNP_Chr, snp_to_gene_mapping$SNP_Pos, sep = "_")
+
+# Reshape final_filtered_data into long format for annotation
+# Use pivot_longer equivalent in base R
+data_long <- reshape(
+  final_filtered_data,
+  varying = list(names(final_filtered_data)[9:ncol(final_filtered_data)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data)[9:ncol(final_filtered_data)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Gene_Name using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Gene_Name
+# Use aggregate to group by Sample and Gene_Name and calculate the mean Frequency
+final_filtered_data_gene_averages <- aggregate(
+  Frequency ~ Sample + Gene_Name,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+# Use reshape to pivot the data back to wide format
+final_filtered_data_gene_averages_wide <- reshape(
+  final_filtered_data_gene_averages,
+  timevar = "Gene_Name",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_gene_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_gene_averages_wide))
+
+# View the structure of the new dataset
+str(final_filtered_data_gene_averages_wide)
+
+# Plotting the data 
+
+# Add LATITUDE to the wide dataset
+# Merge LATITUDE from the original final_filtered_data into final_filtered_data_gene_averages_wide
+final_filtered_data_gene_averages_wide <- merge(
+  final_filtered_data_gene_averages_wide,
+  final_filtered_data[, c("Sample", "LATITUDE")],  # Extract Sample and LATITUDE columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_gene <- reshape(
+  final_filtered_data_gene_averages_wide,
+  varying = list(names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))]),  # Exclude "Sample" and "LATITUDE"
+  v.names = "Frequency",
+  timevar = "Gene_Name",
+  times = names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Gene_Name column is treated as a factor
+data_long_gene$Gene_Name <- as.factor(data_long_gene$Gene_Name)
+
+# Plot the data
+library(ggplot2)
+
+ggplot(data_long_gene, aes(x = LATITUDE, y = Frequency, group = Gene_Name, color = Gene_Name)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across Latitude by Gene",
+    x = "Latitude",
+    y = "Averaged Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")  # Remove the legend
+
+##
+
+# Annotate genes with inversion regions
+# Add a column to indicate whether a gene is in an inversion region
+snp_to_gene_mapping$Region <- snp_to_gene_mapping$Gene_Name  # Default to Gene_Name
+
+for (chrom in names(chromosome_inversion_regions)) {
+  inversion_start <- chromosome_inversion_regions[[chrom]][1]
+  inversion_end <- chromosome_inversion_regions[[chrom]][2]
+  
+  # Assign genes within the inversion region to the inversion label
+  snp_to_gene_mapping$Region[
+    snp_to_gene_mapping$SNP_Chr == chrom &
+    snp_to_gene_mapping$SNP_Pos >= inversion_start &
+    snp_to_gene_mapping$SNP_Pos <= inversion_end
+  ] <- paste0("Chr", chrom, "_Inversion")
+}
+
+# Reshape final_filtered_data into long format for annotation
+data_long <- reshape(
+  final_filtered_data,
+  varying = list(names(final_filtered_data)[9:ncol(final_filtered_data)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data)[9:ncol(final_filtered_data)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Region using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Region
+# Use aggregate to group by Sample and Region and calculate the mean Frequency
+final_filtered_data_region_averages <- aggregate(
+  Frequency ~ Sample + Region,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+final_filtered_data_region_averages_wide <- reshape(
+  final_filtered_data_region_averages,
+  timevar = "Region",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_region_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_region_averages_wide))
+
+# Add LATITUDE to the wide dataset
+final_filtered_data_region_averages_wide <- merge(
+  final_filtered_data_region_averages_wide,
+  final_filtered_data[, c("Sample", "LATITUDE")],  # Extract Sample and LATITUDE columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_region <- reshape(
+  final_filtered_data_region_averages_wide,
+  varying = list(names(final_filtered_data_region_averages_wide)[-c(1,2, ncol(final_filtered_data_region_averages_wide))]),  # Exclude "Sample" and "LATITUDE"
+  v.names = "Frequency",
+  timevar = "Region",
+  times = names(final_filtered_data_region_averages_wide)[-c(1,2, ncol(final_filtered_data_region_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Region column is treated as a factor
+data_long_region$Region <- as.factor(data_long_region$Region)
+
+# Plot the data
+library(ggplot2)
+
+# Plot the data with smoothed lines for each region
+ggplot(data_long_region, aes(x = LATITUDE, y = Frequency, group = Region, color = Region)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0.5, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across Latitude by Region",
+    x = "Latitude",
+    y = "Averaged Allele Frequency",
+    color = "Region"  # Add a label for the legend
+  ) +
+  theme_classic()
+
+
