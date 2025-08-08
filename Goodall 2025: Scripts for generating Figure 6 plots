@@ -19,7 +19,7 @@ module load vcftools/0.1.15
 cd /path/to/working/directory/
 
 # Set a shortcut to the vcf file you will use
-VCF=Linda_Swedish_ECoast_SNPChip_Data_Combined_SU_SLU4_Excluded_Repaired_VCF_Used.vcf
+VCF=BalticSea_EastCoast_Herring_Goodall2025.vcf
 ## Note that the .fam file has been modified to denote samples as 1(control) or 2(case) prior to further analysis. This has to be done manually
 
 
@@ -64,7 +64,7 @@ STH36A_vs_SOUTH <- read.csv("Location_Contrast_STH36A_vs_SOUTH.assoc.adjusted", 
 STH36A_vs_CENTRAL <- read.csv("Location_Contrast_STH36A_vs_CENTRAL.assoc.adjusted", sep="")
 
 ## VCF file
-x <- read.vcfR("/path/to/working/directory/BalticSea_EastCoast_Goodall2025.vcf", verbose=T)
+x <- read.vcfR("/path/to/working/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf", verbose=T)
 List_of_Problem_Polar_Loci <- read.delim("~/path/to/working/directory/List_of_Problem_Polar_Loci.txt")
 
 vcf_df <- as.data.frame(x@fix)
@@ -713,7 +713,7 @@ annotate_snps_simple <- function(snp_df, gtf_GR, mart) {
 
 
 # Load the GTF once
-gtf_file <- "/Users/jakgo991/Documents/Herring_Array/Genomic_raw_data/Clupea_harengus.Ch_v2.0.2.108.gtf"
+gtf_file <- "/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf"
 gtf_GR <- as(import(gtf_file), "GRanges")
 
 # Connect to biomaRt once
