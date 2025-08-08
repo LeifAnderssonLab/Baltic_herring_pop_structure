@@ -1,0 +1,743 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure 6 plots
+
+# ===============================
+# 1. Script for Figure 6 plots
+# ===============================
+
+## ------- Contrasts between outlier locations -------
+
+# Load up the required programs
+ml load bioinfo-tools
+module load plink/1.90b4.9
+module load bcftools/1.14
+module load vcftools/0.1.15
+
+# Set working directory
+cd /path/to/working/directory/
+
+# Set a shortcut to the vcf file you will use
+VCF=Linda_Swedish_ECoast_SNPChip_Data_Combined_SU_SLU4_Excluded_Repaired_VCF_Used.vcf
+## Note that the .fam file has been modified to denote samples as 1(control) or 2(case) prior to further analysis. This has to be done manually
+
+
+## Kal05 vs South
+plink --bfile Location_Contrast_Kal05_vs_SOUTH -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_KAL05_vs_SOUTH
+
+## Kal6 vs South
+plink --bfile Location_Contrast_Kal6_vs_SOUTH -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_KAL6_vs_SOUTH
+
+## Sth36A vs South
+plink --bfile Location_Contrast_STH36A_vs_SOUTH -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_STH36A_vs_SOUTH
+
+###
+
+## Kal05 vs Central
+plink --bfile Location_Contrast_Kal05_vs_CENTRAL -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_KAL05_vs_CENTRAL
+
+## Kal6 vs Central
+plink --bfile Location_Contrast_Kal6_vs_CENTRAL -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_KAL6_vs_CENTRAL
+
+## STH36A vs Central
+plink --bfile Location_Contrast_STH36A_vs_CENTRAL -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Location_Contrast_STH36A_vs_CENTRAL
+
+
+## ------- Plotting contrast outputs in R -------
+
+# Now in RStudio
+library(vcfR)
+
+setwd("/path/to/working/directory/")
+
+## KAL05 CONTRASTS
+KAL05_vs_SOUTH <- read.csv("Location_Contrast_KAL05_vs_SOUTH.assoc.adjusted", sep="")
+KAL05_vs_CENTRAL <- read.csv("Location_Contrast_KAL05_vs_CENTRAL.assoc.adjusted", sep="")
+
+## KAL6 CONTRASTS
+KAL6_vs_SOUTH <- read.csv("Location_Contrast_KAL6_vs_SOUTH.assoc.adjusted", sep="")
+KAL6_vs_CENTRAL <- read.csv("Location_Contrast_KAL6_vs_CENTRAL.assoc.adjusted", sep="")
+
+## STH36A CONTRASTS
+STH36A_vs_SOUTH <- read.csv("Location_Contrast_STH36A_vs_SOUTH.assoc.adjusted", sep="")
+STH36A_vs_CENTRAL <- read.csv("Location_Contrast_STH36A_vs_CENTRAL.assoc.adjusted", sep="")
+
+## VCF file
+x <- read.vcfR("/path/to/working/directory/BalticSea_EastCoast_Goodall2025.vcf", verbose=T)
+List_of_Problem_Polar_Loci <- read.delim("~/path/to/working/directory/List_of_Problem_Polar_Loci.txt")
+
+vcf_df <- as.data.frame(x@fix)
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+
+KAL05_vs_SOUTH_merged_data <- merge(vcf_df, KAL05_vs_SOUTH, by = "SNP")
+KAL05_vs_CENTRAL_merged_data <- merge(vcf_df, KAL05_vs_CENTRAL, by = "SNP")
+
+KAL6_vs_SOUTH_merged_data <- merge(vcf_df, KAL6_vs_SOUTH, by = "SNP")
+KAL6_vs_CENTRAL_merged_data <- merge(vcf_df, KAL6_vs_CENTRAL, by = "SNP")
+
+STH36A_vs_SOUTH_merged_data <- merge(vcf_df, STH36A_vs_SOUTH, by = "SNP")
+STH36A_vs_CENTRAL_merged_data <- merge(vcf_df, STH36A_vs_CENTRAL, by = "SNP")
+
+# Remove problematic loci from Autumn_merged_data
+library(tibble)
+
+# KAL05
+KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+# KAL6
+KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+# STH36A
+STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  mutate(CHROM = as.numeric(CHROM)) %>%
+  mutate(POS = as.numeric(POS)) %>%
+  anti_join(
+    List_of_Problem_Polar_Loci %>% mutate(CHROM = as.numeric(CHROM)),
+    by = c("CHROM", "POS")
+  )
+
+## ------- Mark significant SNPs for downstream plotting -------
+
+# Proceed with downstream analysis
+# Create significance flag
+KAL05_vs_SOUTH_merged_data$significance <- ifelse(KAL05_vs_SOUTH_merged_data$BONF < 0.05, "significant", "non-significant")
+KAL05_vs_CENTRAL_merged_data$significance <- ifelse(KAL05_vs_CENTRAL_merged_data$BONF < 0.05, "significant", "non-significant")
+
+KAL6_vs_SOUTH_merged_data$significance <- ifelse(KAL6_vs_SOUTH_merged_data$BONF < 0.05, "significant", "non-significant")
+KAL6_vs_CENTRAL_merged_data$significance <- ifelse(KAL6_vs_CENTRAL_merged_data$BONF < 0.05, "significant", "non-significant")
+
+STH36A_vs_SOUTH_merged_data$significance <- ifelse(STH36A_vs_SOUTH_merged_data$BONF < 0.05, "significant", "non-significant")
+STH36A_vs_CENTRAL_merged_data$significance <- ifelse(STH36A_vs_CENTRAL_merged_data$BONF < 0.05, "significant", "non-significant")
+
+
+## ------- Plot KAL05 vs SOUTHERN/CENTRAL -------
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+KAL05_vs_SOUTH_merged_data$SNP <- factor(KAL05_vs_SOUTH_merged_data$SNP,
+                                       levels = unique(KAL05_vs_SOUTH_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL05_vs_SOUTH_merged_data$SNP)))
+
+sig_KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL05_vs_SOUTH_merged_data$SNP)))
+
+# Step 6: Plot
+upwards_plot_KAL05 <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_KAL05_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_KAL05_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  ylim(0, 20) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for KAL05 vs SOUTHERN",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+KAL05_vs_CENTRAL_merged_data$SNP <- factor(KAL05_vs_CENTRAL_merged_data$SNP,
+                                       levels = unique(KAL05_vs_CENTRAL_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL05_vs_CENTRAL_merged_data$SNP)))
+
+sig_KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL05_vs_CENTRAL_merged_data$SNP)))
+
+# Step 6: Plot
+downwards_plot_KAL05 <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_KAL05_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_KAL05_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  scale_y_reverse(limits = c(20,0)) +  # Flip the y-axis
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for KAL05 vs CENTRAL",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load required libraries
+library(ggplot2)
+library(cowplot)
+
+# Step 3: Combine the plots using cowplot
+combined_plot_KAL05 <- plot_grid(
+  upwards_plot_KAL05, downwards_plot_KAL05,
+  ncol = 1,  # Arrange plots in a single column
+  align = "v",  # Align vertically
+  rel_heights = c(1, 1)  # Equal height for both plots
+)
+
+# Step 4: Display the combined plot
+print(combined_plot_KAL05)
+
+
+## ------- Plot KAL06 vs SOUTHERN/CENTRAL -------
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+KAL6_vs_SOUTH_merged_data$SNP <- factor(KAL6_vs_SOUTH_merged_data$SNP,
+                                       levels = unique(KAL6_vs_SOUTH_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL6_vs_SOUTH_merged_data$SNP)))
+
+sig_KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL6_vs_SOUTH_merged_data$SNP)))
+
+# Step 6: Plot
+upwards_plot_KAL6 <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_KAL6_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_KAL6_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  ylim(0, 180) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for KAL6 vs SOUTHERN",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+KAL6_vs_CENTRAL_merged_data$SNP <- factor(KAL6_vs_CENTRAL_merged_data$SNP,
+                                       levels = unique(KAL6_vs_CENTRAL_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL6_vs_CENTRAL_merged_data$SNP)))
+
+sig_KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(KAL6_vs_CENTRAL_merged_data$SNP)))
+
+# Step 6: Plot
+downwards_plot_KAL6 <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_KAL6_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_KAL6_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  scale_y_reverse(limits = c(180, 0)) +  # Flip the y-axis
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for KAL6 vs CENTRAL",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load required libraries
+library(ggplot2)
+library(cowplot)
+
+# Step 3: Combine the plots using cowplot
+combined_plot_KAL6 <- plot_grid(
+  upwards_plot_KAL6, downwards_plot_KAL6,
+  ncol = 1,  # Arrange plots in a single column
+  align = "v",  # Align vertically
+  rel_heights = c(1, 1)  # Equal height for both plots
+)
+
+# Step 4: Display the combined plot
+print(combined_plot_KAL6)
+
+
+## ------- Plot STH36A vs SOUTHERN/CENTRAL -------
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+STH36A_vs_SOUTH_merged_data$SNP <- factor(STH36A_vs_SOUTH_merged_data$SNP,
+                                       levels = unique(STH36A_vs_SOUTH_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(STH36A_vs_SOUTH_merged_data$SNP)))
+
+sig_STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(STH36A_vs_SOUTH_merged_data$SNP)))
+
+# Step 6: Plot
+upwards_plot_STH36A <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_STH36A_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_STH36A_vs_SOUTH_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+ylim(0, 60) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for STH36A vs SOUTHERN",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Step 1: Ensure CHROM and POS are numeric and sort the data
+STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  arrange(CHROM, POS)
+
+# Step 2: Assign alternating colors to non-significant points based on CHROM
+STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Step 3: Create significance flag
+STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+STH36A_vs_CENTRAL_merged_data$SNP <- factor(STH36A_vs_CENTRAL_merged_data$SNP,
+                                       levels = unique(STH36A_vs_CENTRAL_merged_data$SNP))
+
+# Step 5: Split data into two subsets and preserve factor levels
+non_sig_STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(STH36A_vs_CENTRAL_merged_data$SNP)))
+
+sig_STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(STH36A_vs_CENTRAL_merged_data$SNP)))
+
+# Step 6: Plot
+downwards_plot_STH36A <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_STH36A_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_STH36A_vs_CENTRAL_merged_data,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  scale_y_reverse(limits = c(60, 0)) +  # Flip the y-axis
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for STH36A vs CENTRAL",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Load required libraries
+library(ggplot2)
+library(cowplot)
+
+# Step 3: Combine the plots using cowplot
+combined_plot_STH36A <- plot_grid(
+  upwards_plot_STH36A, downwards_plot_STH36A,
+  ncol = 1,  # Arrange plots in a single column
+  align = "v",  # Align vertically
+  rel_heights = c(1, 1)  # Equal height for both plots
+)
+
+# Step 4: Display the combined plot
+print(combined_plot_STH36A)
+
+
+## ------- Source annotations for all contrasts -------
+
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Load SNP data
+sig_KAL05_vs_SOUTH_anno <- sig_KAL05_vs_SOUTH_merged_data[, c(2,3)]
+sig_KAL05_vs_CENTRAL_anno <- sig_KAL05_vs_CENTRAL_merged_data[, c(2,3)]
+
+sig_KAL6_vs_SOUTH_anno <- sig_KAL6_vs_SOUTH_merged_data[, c(2,3)]
+sig_KAL6_vs_CENTRAL_anno <- sig_KAL6_vs_CENTRAL_merged_data[, c(2,3)]
+
+sig_STH36A_vs_SOUTH_anno <- sig_STH36A_vs_SOUTH_merged_data[, c(2,3)]
+sig_STH36A_vs_CENTRAL_anno <- sig_STH36A_vs_CENTRAL_merged_data[, c(2,3)]
+
+##
+
+library(GenomicRanges)
+library(rtracklayer)
+library(biomaRt)
+library(dplyr)
+
+# Function to annotate SNP data (CHROM, POS)
+annotate_snps_simple <- function(snp_df, gtf_GR, mart) {
+  # Create GRanges from CHROM and POS
+  snp_GR <- GRanges(
+    seqnames = snp_df$CHROM,
+    ranges = IRanges(start = snp_df$POS, end = snp_df$POS),
+    strand = "*"
+  )
+  
+  # Find overlaps with GTF gene annotations
+  snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+  
+  snp_annotations <- data.frame(
+    SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+    SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+    Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+    Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+    stringsAsFactors = FALSE
+  )
+  
+  # Filter for gene features only
+  snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+  
+  # Query Ensembl for gene information
+  gene_info <- getBM(
+    attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                   "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+    filters = "ensembl_gene_id",
+    values = unique(snp_annotations_genes$Gene_ID),
+    mart = mart
+  )
+  
+  # Merge SNP annotations with gene info
+  snp_annotations_genes <- merge(
+    snp_annotations_genes, gene_info,
+    by.x = "Gene_ID", by.y = "ensembl_gene_id", all.x = TRUE
+  )
+  
+  # Rename columns
+  colnames(snp_annotations_genes) <- sub("external_gene_name", "Gene_Name", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("description", "Gene_Description", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("start_position", "Gene_Start", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("end_position", "Gene_End", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("cds_length", "CDS_Length", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("strand", "Gene_Strand", colnames(snp_annotations_genes))
+  colnames(snp_annotations_genes) <- sub("gene_biotype", "Gene_Biotype", colnames(snp_annotations_genes))
+  
+  # Remove duplicates
+  snp_annotations_genes <- distinct(snp_annotations_genes, Gene_ID, .keep_all = TRUE)
+  
+  return(snp_annotations_genes)
+}
+
+
+# Load the GTF once
+gtf_file <- "/Users/jakgo991/Documents/Herring_Array/Genomic_raw_data/Clupea_harengus.Ch_v2.0.2.108.gtf"
+gtf_GR <- as(import(gtf_file), "GRanges")
+
+# Connect to biomaRt once
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+# List of your CHROM/POS dataframes
+snp_datasets <- list(
+  KAL05_SOUTH = sig_KAL05_vs_SOUTH_anno,
+  KAL05_CENTRAL = sig_KAL05_vs_CENTRAL_anno,
+  KAL6_SOUTH = sig_KAL6_vs_SOUTH_anno,
+  KAL6_CENTRAL = sig_KAL6_vs_CENTRAL_anno,
+  STH36A_SOUTH = sig_STH36A_vs_SOUTH_anno,
+  STH36A_CENTRAL = sig_STH36A_vs_CENTRAL_anno
+)
+
+# Apply the annotation function to each dataset
+annotated_results <- lapply(snp_datasets, annotate_snps_simple, gtf_GR = gtf_GR, mart = mart)
+
+# Optionally name the results for tracking
+names(annotated_results) <- names(snp_datasets)
+
+# Example: View one result
+head(annotated_results$KAL05_SOUTH)
+
+## ------- End Script -------
