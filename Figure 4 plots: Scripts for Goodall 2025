@@ -642,4 +642,4 @@ ggplot(data_long_region, aes(x = LATITUDE, y = Frequency, group = Region, color 
   ) +
   theme_classic()
 
-
+## ------- End Script -------
