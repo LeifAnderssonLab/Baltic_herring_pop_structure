@@ -1,0 +1,1247 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure 1 plots
+
+# ===============================
+#  Script for Figure 1a plot
+# ===============================
+
+library(vcfR)
+library(adegenet)
+
+x <- read.vcfR("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf", verbose=T)
+
+# Convert CHROM to numeric and filter rows with CHROM values between 1 and 26
+valid_rows <- !is.na(as.numeric(x@fix[, "CHROM"])) & as.numeric(x@fix[, "CHROM"]) >= 1 & as.numeric(x@fix[, "CHROM"]) <= 26
+x@fix <- x@fix[valid_rows, ]
+
+# Replace the ID field with the values in CHROM and POS separated by an underscore
+x@fix[, "ID"] <- paste(x@fix[, "CHROM"], x@fix[, "POS"], sep = "_")
+
+# Remove corresponding rows from the @gt slot to match the number of rows in @fix
+x@gt <- x@gt[1:nrow(x@fix), ]
+
+nrow(x@gt)
+nrow(x@fix) # these must match in value
+
+# Convert to genind object
+y <- vcfR2genind(x, ploidy=2)
+
+grp <- find.clusters(y, max.n.clust = 2, n.pca = 1500, n.clust =2) # For splitting spring autumn samples
+
+# Generate the DAPC object
+dapc1 <- dapc(y, grp$grp,n.pca= 1500, n.da= 1, var.contrib = TRUE, scale = FALSE) # Spring Samples
+
+# Generate the plot for the DAPC
+scatter(dapc1,1,1, bg="white",
+scree.da=FALSE, legend=TRUE, solid=.4)
+
+# Look at them across single PCs with sample names
+scatter(dapc1, 1, 1, bg = "white",
+        scree.da = FALSE, legend = TRUE, solid = 0.4,
+        label = rownames(dapc1$ind.coord), 
+        label.inds = TRUE)  # Add sample names as labels
+
+tabIscapTot<-data.frame(Cluster=c(grp$grp),Proportion_assign_cluster=dapc1$posterior,geno=y)
+write.table(tabIscapTot,"path/to/directory/Spring_Assignments.txt",col=NA, sep="\t", dec=".")
+
+##
+
+library(dplyr)
+library(ggplot2)
+library(ggrepel)  # For non-overlapping labels
+
+# Extract the individual coordinates (relative to PC1)
+ind_coord <- dapc1$ind.coord[, 1]  # Extract the LD1 values
+sample_names <- rownames(dapc1$ind.coord)  # Extract sample names
+
+# Extract posterior group assignments
+posterior_groups <- dapc1$assign  # Use the $assign object directly
+
+# Combine data into a single data frame
+data <- data.frame(
+  Sample = sample_names,
+  LD1 = ind_coord,
+  Group = posterior_groups
+)
+
+# Detect outliers within each group using the median and MAD
+outlier_data <- data %>%
+  group_by(Group) %>%
+  mutate(
+    Median_LD1 = median(LD1, na.rm = TRUE),  # Calculate the median for each group
+    MAD_LD1 = mad(LD1, na.rm = TRUE),        # Calculate the median absolute deviation for each group
+    Z_Score = (LD1 - Median_LD1) / MAD_LD1,  # Calculate z-scores using the median and MAD
+    Outlier = ifelse(abs(Z_Score) > 3, "Yes", "No")  # Flag outliers (z-score > 3)
+  ) %>%
+  # Manually adjust outlier designations for LD1 < -3
+  mutate(
+    Outlier = ifelse(LD1 < -3, "No", Outlier)  # Override outlier designation for LD1 < -3
+  )
+
+View(outlier_data)
+
+##
+
+library(tidyverse)
+library(dplyr)
+library(tidyr)
+
+# Calculate the median LD1 value for each group
+median_values <- data %>%
+  group_by(Group) %>%
+  summarize(Median_LD1 = median(LD1, na.rm = TRUE))  # Calculate the median LD1 for each group
+
+# Calculate the absolute difference from the median for each sample
+data_with_diff <- data %>%
+  left_join(median_values, by = "Group") %>%  # Add the median LD1 values to the data
+  mutate(Distance_From_Median = abs(LD1 - Median_LD1))  # Calculate the absolute difference from the median
+
+# Find the 10 samples closest to the median for each group
+most_median_samples <- data_with_diff %>%
+  group_by(Group) %>%
+  arrange(Distance_From_Median) %>%  # Sort by distance from the median
+  slice_head(n = 10)  # Select the top 10 samples closest to the median
+
+# View the results
+print(most_median_samples)
+
+## ------- End plot 1a -------
+
+
+
+# ===============================
+#  Script for Figure 1b plot
+# ===============================
+
+# Load up the required programs
+ml load bioinfo-tools
+module load plink/1.90b4.9
+module load bcftools/1.14
+module load vcftools/0.1.15
+
+# Set working directory
+cd /path/to/directory/
+
+# Set a shortcut to the vcf file you will use
+VCF=BalticSea_EastCoast_Herring_Goodall2025.vcf
+
+## Note that the .fam file has been modified to denote samples as 1(control) or 2(case) prior to further analysis. This has to be done manually
+## Once you've denoted your cases as 2 (i.e. all the switchers) you can use " sed -i 's/-9/1/g' GASS_vs_SpringSpawners_Subset.fam " to change all the remaining -9 entries
+
+# Run the actual contrasts (Bonferroni corrected p-value)
+# Spring vs Autumn (Outliers excluded)
+plink --vcf $VCF -make-bed --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_Spring_OutliersExcluded
+
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded --freq case-control --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExcluded_Freq_by_Group
+
+# Now in RStudio
+library(vcfR)
+
+setwd("/path/to/directory/")
+
+
+## ------- Autumn_vs_SPRING Analysis (Outliers excluded) -------
+Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded.assoc <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded.assoc.adjusted", sep="")
+Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExcluded_Freq_by_Group.frq.cc", sep="")
+
+# VCF file
+x <- read.vcfR("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf", verbose=T)
+List_of_Problem_Polar_Loci <- read.delim("~/path/to/directory/List_of_Problem_Polar_Loci.txt")
+
+vcf_df <- as.data.frame(x@fix)
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+
+Autumn_vsSpring_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded.assoc, by = "SNP")
+
+# Remove problematic loci from Autumn_vsSpring_merged_data
+Autumn_vsSpring_merged_data$CHROM <- as.numeric(Autumn_vsSpring_merged_data$CHROM)  # Ensure CHROM is numeric
+Autumn_vsSpring_merged_data$POS <- as.numeric(Autumn_vsSpring_merged_data$POS)  # Ensure POS is numeric
+Autumn_vsSpring_merged_data <- Autumn_vsSpring_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+colnames(Autumn_vsSpring_merged_data)[which(names(Autumn_vsSpring_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Autumn_vsSpring_merged_data_FINAL <- merge(Autumn_vsSpring_merged_data, Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded_Freq_by_Group.frq, by = "SNP")
+Autumn_vsSpring_merged_data_FINAL$delta_AF <- abs(Autumn_vsSpring_merged_data_FINAL$MAF_A - Autumn_vsSpring_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Ensure CHROM and POS are numeric and sort the data
+Autumn_vsSpring_merged_data_FINAL$CHROM <- as.numeric(Autumn_vsSpring_merged_data_FINAL$CHROM)
+Autumn_vsSpring_merged_data_FINAL$POS <- as.numeric(Autumn_vsSpring_merged_data_FINAL$POS)
+Autumn_vsSpring_merged_data_FINAL <- Autumn_vsSpring_merged_data_FINAL %>%
+  arrange(CHROM, POS)
+
+# Assign alternating colors to non-significant points based on CHROM
+Autumn_vsSpring_merged_data_FINAL <- Autumn_vsSpring_merged_data_FINAL %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Create significance flag
+Autumn_vsSpring_merged_data_FINAL <- Autumn_vsSpring_merged_data_FINAL %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Set SNP factor levels based on sorted order to preserve genomic position
+Autumn_vsSpring_merged_data_FINAL$SNP <- factor(Autumn_vsSpring_merged_data_FINAL$SNP,
+                                                levels = unique(Autumn_vsSpring_merged_data_FINAL$SNP))
+
+# Split data into two subsets and preserve factor levels
+non_sig_autumn_spring <- Autumn_vsSpring_merged_data_FINAL %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_vsSpring_merged_data_FINAL$SNP)))
+non_sig_autumn_spring$BONF[is.infinite(non_sig_autumn_spring$BONF)] <- 1.0000
+
+
+
+sig_autumn_spring <- Autumn_vsSpring_merged_data_FINAL %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_vsSpring_merged_data_FINAL$SNP)))
+
+# Plot
+upwards_plot_AUT_SPR <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_autumn_spring,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 1, size = 1.5
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_autumn_spring,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 1, size = 0.7
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  #ylim(0, 60) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for Autumn vs SPRING (Outliers excluded)",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted P-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+
+# Display the plot
+print(upwards_plot_AUT_SPR)
+
+
+## ------- Annotate the most divergent subset of SNPs -------
+
+# Filter for positions with -log10(BONF) > 200
+filtered_high_sig <- Autumn_vsSpring_merged_data_FINAL %>%
+  filter(-log10(BONF) > 200)
+
+# View the result
+View(filtered_high_sig)
+
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Load SNP data
+Latitude_Anno <- filtered_high_sig[, c(2,3)]
+
+Latitude_Anno$CHR <- as.numeric(Latitude_Anno$CHROM)
+Latitude_Anno$POS <- as.numeric(Latitude_Anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = Latitude_Anno$CHR,
+                  ranges = IRanges(start = Latitude_Anno$POS, end = Latitude_Anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(Latitude_Anno$CHR)
+
+chr_annotations <- subset(cluhar_v2.0.2_gtf, seqnames(cluhar_v2.0.2_gtf) %in% c("1", "10", "11", "12", "15", "16", "17", "18", "23", "4", "5"))
+gtf_GR <- as(chr_annotations, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates
+#snp_annotations_genes <- distinct(snp_annotations_genes$Gene_ID, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes)
+
+# Add CHROM_POS column to the end
+snp_annotations_genes$CHROM_POS <- paste0(
+  snp_annotations_genes$SNP_Chr, "_", snp_annotations_genes$SNP_Pos
+)
+
+# Reorder to insert CHROM_POS as the 4th column
+snp_annotations_genes <- snp_annotations_genes[, c(
+  names(snp_annotations_genes)[1:3],           # SNP_Chr, SNP_Pos, Feature_Type
+  "CHROM_POS",                                 # new column
+  names(snp_annotations_genes)[4:(ncol(snp_annotations_genes) - 1)]  # rest of the columns (excluding CHROM_POS at the end)
+)]
+
+# Keep only the first occurrence of each unique SNP_id
+library(dplyr)
+snp_annotations_genes_unique <- snp_annotations_genes %>%
+  distinct(CHROM_POS, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes_unique)
+
+write.table(filtered_high_sig, "Spring_Autumn_SignSNP_Bonf200_RAW.txt")
+write.table(snp_annotations_genes_unique, "Spring_Autumn_SignSNP_Bonf200_ANNOT.txt")
+
+## -------  End plot 1b -------
+
+
+
+# ===============================
+#  Script for Figure 1c-d plot
+# =============================== 
+
+# Load up the required programs
+ml load bioinfo-tools
+module load plink/1.90b4.9
+module load bcftools/1.14
+module load vcftools/0.1.15
+
+# Set working directory
+cd /path/to/directory/
+
+# Set a shortcut to the vcf file you will use
+VCF=BalticSea_EastCoast_Herring_Goodall2025.vcf
+
+## Note that the .fam file has been modified to denote samples as 1(control) or 2(case) prior to further analysis. This has to be done manually
+## Once you've denoted your cases as 2 (i.e. all the switchers) you can use " sed -i 's/-9/1/g' GASS_vs_SpringSpawners_Subset.fam " to change all the remaining -9 entries
+
+# Run the actual contrasts (Bonferroni corrected p-value)
+# Autumn vs Autumn Outliers
+plink --vcf $VCF -make-bed --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_Outliers
+
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_Outliers -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_Outliers
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_Outliers --freq case-control --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group
+
+# Spring vs Autumn Outliers
+plink --vcf $VCF -make-bed --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers
+
+plink --bfile Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers
+plink --bfile Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers --freq case-control --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group
+
+# Autumn vs Spring Outliers
+plink --vcf $VCF -make-bed --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers
+
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers
+plink --bfile Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers --freq case-control --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers_Freq_by_Group
+
+# Spring vs Spring Outliers
+plink --vcf $VCF -make-bed --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers
+
+plink --bfile Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers -assoc --adjust --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers
+plink --bfile Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers --freq case-control --autosome-num 26 --chr 1-26 --allow-no-sex --double-id --allow-extra-chr --out Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers_Freq_by_Group
+
+
+# Now in RStudio
+library(vcfR)
+
+setwd("path/to/directory/")
+
+# Autumn Outliers
+Seasonal_Assignments_Baltic_Autumn_vs_Outliers.assoc <- read.csv("Seasonal_Assignments_Baltic_Autumn_vs_Outliers.assoc.adjusted", sep="")
+Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers.assoc <- read.csv("Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers.assoc.adjusted", sep="")
+
+Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq.cc", sep="")
+Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq.cc", sep="")
+
+# Spring Outliers
+Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers.assoc <- read.csv("Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers.assoc.adjusted", sep="")
+Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers.assoc <- read.csv("Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers.assoc.adjusted", sep="")
+
+Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers_Freq_by_Group.frq.cc", sep="")
+Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers_Freq_by_Group.frq.cc", sep="")
+
+
+# Spring vs Autumn (Outliers excluded)
+Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded.assoc <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded.assoc.adjusted", sep="")
+Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExluded_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_SPRING_outliersExcluded_Freq_by_Group.frq.cc", sep="")
+
+# VCF file
+x <- read.vcfR("BalticSea_EastCoast_Herring_Goodall2025.vcf", verbose=T)
+List_of_Problem_Polar_Loci <- read.delim("List_of_Problem_Polar_Loci.txt")
+
+vcf_df <- as.data.frame(x@fix)
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+
+# Autumn Outliers
+Autumn_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Autumn_vs_Outliers.assoc, by = "SNP")
+Spring_vs_AutumnOutl_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers.assoc, by = "SNP")
+
+# Spring Outliers
+Autumn_vsSpringOutl_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers.assoc, by = "SNP")
+Spring_vsSpringOutl_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers.assoc, by = "SNP")
+
+
+## ------- Autumn Outliers vs Autumn -------
+# Remove problematic loci from Autumn_merged_data
+Autumn_merged_data$CHROM <- as.numeric(Autumn_merged_data$CHROM)  # Ensure CHROM is numeric
+Autumn_merged_data$POS <- as.numeric(Autumn_merged_data$POS)  # Ensure POS is numeric
+
+Autumn_merged_data <- Autumn_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Autumn_merged_data)[which(names(Autumn_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Autumn_merged_data_FINAL <- merge(Autumn_merged_data, Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq, by = "SNP")
+
+Autumn_merged_data_FINAL$delta_AF <- abs(Autumn_merged_data_FINAL$MAF_A - Autumn_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+# Remove problematic loci from Autumn_merged_data
+Autumn_merged_data$CHROM <- as.numeric(Autumn_merged_data$CHROM)  # Ensure CHROM is numeric
+Autumn_merged_data$POS <- as.numeric(Autumn_merged_data$POS)  # Ensure POS is numeric
+
+Autumn_merged_data <- Autumn_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Autumn_merged_data)[which(names(Autumn_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Autumn_merged_data_FINAL <- merge(Autumn_merged_data, Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq, by = "SNP")
+
+Autumn_merged_data_FINAL$delta_AF <- abs(Autumn_merged_data_FINAL$MAF_A - Autumn_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+
+## ------- Autumn Outliers vs Spring -------
+# Remove problematic loci from Spring_merged_data
+Spring_vs_AutumnOutl_merged_data$CHROM <- as.numeric(Spring_vs_AutumnOutl_merged_data$CHROM)  # Ensure CHROM is numeric
+Spring_vs_AutumnOutl_merged_data$POS <- as.numeric(Spring_vs_AutumnOutl_merged_data$POS)  # Ensure POS is numeric
+
+Spring_vs_AutumnOutl_merged_data <- Spring_vs_AutumnOutl_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Spring_vs_AutumnOutl_merged_data)[which(names(Spring_vs_AutumnOutl_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Spring_vs_AutumnOutl_merged_data_FINAL <- merge(Spring_vs_AutumnOutl_merged_data, Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq, by = "SNP")
+
+Spring_vs_AutumnOutl_merged_data_FINAL$delta_AF <- abs(Spring_vs_AutumnOutl_merged_data_FINAL$MAF_A - Spring_vs_AutumnOutl_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+
+## ------- Spring Outliers vs Autumn -------
+# Remove problematic loci from Autumn_vsSpringOutl_merged_data
+Autumn_vsSpringOutl_merged_data$CHROM <- as.numeric(Autumn_vsSpringOutl_merged_data$CHROM)  # Ensure CHROM is numeric
+Autumn_vsSpringOutl_merged_data$POS <- as.numeric(Autumn_vsSpringOutl_merged_data$POS)  # Ensure POS is numeric
+
+Autumn_vsSpringOutl_merged_data <- Autumn_vsSpringOutl_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Autumn_vsSpringOutl_merged_data)[which(names(Autumn_vsSpringOutl_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Autumn_vsSpringOutl_merged_data_FINAL <- merge(Autumn_vsSpringOutl_merged_data, Seasonal_Assignments_Baltic_Autumn_vs_SpringOutliers_Freq_by_Group.frq, by = "SNP")
+
+Autumn_vsSpringOutl_merged_data_FINAL$delta_AF <- abs(Autumn_vsSpringOutl_merged_data_FINAL$MAF_A - Autumn_vsSpringOutl_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+
+## ------- Spring Outliers vs Spring -------
+# Remove problematic loci from Spring_vsSpringOutl_merged_data
+Spring_vsSpringOutl_merged_data$CHROM <- as.numeric(Spring_vsSpringOutl_merged_data$CHROM)  # Ensure CHROM is numeric
+Spring_vsSpringOutl_merged_data$POS <- as.numeric(Spring_vsSpringOutl_merged_data$POS)  # Ensure POS is numeric
+
+Spring_vsSpringOutl_merged_data <- Spring_vsSpringOutl_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Spring_vsSpringOutl_merged_data)[which(names(Spring_vsSpringOutl_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Spring_vsSpringOutl_merged_data_FINAL <- merge(Spring_vsSpringOutl_merged_data, Seasonal_Assignments_Baltic_Spring_vs_SpringOutliers_Freq_by_Group.frq, by = "SNP")
+
+Spring_vsSpringOutl_merged_data_FINAL$delta_AF <- abs(Spring_vsSpringOutl_merged_data_FINAL$MAF_A - Spring_vsSpringOutl_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+
+## ------- Plotting contrasts -------
+# Create significance flag
+Autumn_merged_data_FINAL$significance <- ifelse(Autumn_merged_data_FINAL$BONF < 0.05, "significant", "non-significant")
+Spring_vs_AutumnOutl_merged_data$significance <- ifelse(Spring_vs_AutumnOutl_merged_data$BONF < 0.05, "significant", "non-significant")
+
+Autumn_vsSpringOutl_merged_data_FINAL$significance <- ifelse(Autumn_vsSpringOutl_merged_data_FINAL$BONF < 0.05, "significant", "non-significant")
+Spring_vsSpringOutl_merged_data_FINAL$significance <- ifelse(Spring_vsSpringOutl_merged_data_FINAL$BONF < 0.05, "significant", "non-significant")
+
+####################################
+## Autumn_vs_AutumnOutliers Analysis
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Ensure CHROM and POS are numeric and sort the data
+Autumn_merged_data_FINAL$CHROM <- as.numeric(Autumn_merged_data_FINAL$CHROM)
+Autumn_merged_data_FINAL$POS <- as.numeric(Autumn_merged_data_FINAL$POS)
+
+Autumn_merged_data_FINAL <- Autumn_merged_data_FINAL %>%
+  arrange(CHROM, POS)
+
+# Assign alternating colors to non-significant points based on CHROM
+Autumn_merged_data_FINAL <- Autumn_merged_data_FINAL %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Create significance flag
+Autumn_merged_data_FINAL <- Autumn_merged_data_FINAL %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Set SNP factor levels based on sorted order to preserve genomic position
+Autumn_merged_data_FINAL$SNP <- factor(Autumn_merged_data_FINAL$SNP,
+                                       levels = unique(Autumn_merged_data_FINAL$SNP))
+
+# Split data into two subsets and preserve factor levels
+non_sig_autumn_autumnoutliers <- Autumn_merged_data_FINAL %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_merged_data_FINAL$SNP)))
+
+sig_autumn_autumnoutliers <- Autumn_merged_data_FINAL %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_merged_data_FINAL$SNP)))
+
+# Plot
+upwards_plot <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_autumn_autumnoutliers,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_autumn_autumnoutliers,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  ylim(0, 60) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for Autumn vs Autumn_Outliers",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+# Filter significant SNPs for Autumn
+significant_autumn_snps <- Autumn_merged_data_FINAL %>%
+  filter(BONF < 0.05)
+
+View(significant_autumn_snps)
+
+# Export significant SNPs for Autumn to a CSV file
+write.csv(
+  significant_autumn_snps,
+  "~/path/to/directory/Significant_SNPs_Autumn.csv",
+  row.names = FALSE
+)
+
+#####################################
+## Spring_vs_AutumnOutliers Analysis
+
+Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Autumn_vs_Outliers_Freq_by_Group.frq.cc", sep="")
+Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq <- read.csv("~/path/to/directory/Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq.cc", sep="")
+
+x <- read.vcfR("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf", verbose=T)
+List_of_Problem_Polar_Loci <- read.delim("~/path/to/directory/List_of_Problem_Polar_Loci.txt")
+
+
+vcf_df <- as.data.frame(x@fix)
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+Spring_vs_AutumnOutl_merged_data <- merge(vcf_df, Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers.assoc, by = "SNP")
+
+## 
+
+# Remove problematic loci from Spring_vs_AutumnOutl_merged_data_FINAL$delta_AF
+Spring_vs_AutumnOutl_merged_data$CHROM <- as.numeric(Spring_vs_AutumnOutl_merged_data$CHROM)  # Ensure CHROM is numeric
+Spring_vs_AutumnOutl_merged_data$POS <- as.numeric(Spring_vs_AutumnOutl_merged_data$POS)  # Ensure POS is numeric
+
+Spring_vs_AutumnOutl_merged_data <- Spring_vs_AutumnOutl_merged_data %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+colnames(Spring_vs_AutumnOutl_merged_data)[which(names(Spring_vs_AutumnOutl_merged_data) == "ID")] <- "SNP" # Rename the "ID" column to "SNP" so it matches the freq file
+Spring_vs_AutumnOutl_merged_data_FINAL <- merge(Spring_vs_AutumnOutl_merged_data, Seasonal_Assignments_Baltic_Spring_vs_Autumn_Outliers_Freq_by_Group.frq, by = "SNP")
+
+Spring_vs_AutumnOutl_merged_data_FINAL$delta_AF <- abs(Spring_vs_AutumnOutl_merged_data_FINAL$MAF_A - Spring_vs_AutumnOutl_merged_data_FINAL$MAF_U) # Calculate delta allele frequency
+
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Ensure CHROM and POS are numeric and sort the data
+Spring_vs_AutumnOutl_merged_data_FINAL$CHROM <- as.numeric(Spring_vs_AutumnOutl_merged_data_FINAL$CHROM)
+Spring_vs_AutumnOutl_merged_data_FINAL$POS <- as.numeric(Spring_vs_AutumnOutl_merged_data_FINAL$POS)
+
+Spring_vs_AutumnOutl_merged_data_FINAL <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  arrange(CHROM, POS)
+
+# Assign alternating colors to non-significant points based on CHROM
+Spring_vs_AutumnOutl_merged_data_FINAL <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Create significance flag
+Spring_vs_AutumnOutl_merged_data_FINAL <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Set SNP factor levels based on sorted order to preserve genomic position
+Spring_vs_AutumnOutl_merged_data_FINAL$SNP <- factor(Spring_vs_AutumnOutl_merged_data_FINAL$SNP,
+                                       levels = unique(Spring_vs_AutumnOutl_merged_data_FINAL$SNP))
+
+# Split data into two subsets and preserve factor levels
+non_sig <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Spring_vs_AutumnOutl_merged_data_FINAL$SNP)))
+
+sig <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Spring_vs_AutumnOutl_merged_data_FINAL$SNP)))
+
+# Plot
+downwards_plot <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  
+  # Reverse the y-axis and set limits
+  scale_y_reverse(limits = c(60, 0)) +  # Flip the y-axis
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for Spring vs Autumn_Outliers",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+##
+
+# Filter significant SNPs for Autumn
+significant_Spring_vs_AutumnOutl_snps <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  filter(BONF < 0.05)
+
+View(significant_Spring_vs_AutumnOutl_snps)
+
+# Export significant SNPs for Autumn to a CSV file
+write.csv(
+  significant_Spring_vs_AutumnOutl_snps,
+  "~/path/to/directory/Significant_SNPs_Spring_vs_AutumnOutl_snps.csv",
+  row.names = FALSE
+)
+
+#####################################
+## Autumn_vs_SpringOutliers Analysis
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Ensure CHROM and POS are numeric and sort the data
+Autumn_vsSpringOutl_merged_data_FINAL$CHROM <- as.numeric(Autumn_vsSpringOutl_merged_data_FINAL$CHROM)
+Autumn_vsSpringOutl_merged_data_FINAL$POS <- as.numeric(Autumn_vsSpringOutl_merged_data_FINAL$POS)
+
+Autumn_vsSpringOutl_merged_data_FINAL <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  arrange(CHROM, POS)
+
+# Assign alternating colors to non-significant points based on CHROM
+Autumn_vsSpringOutl_merged_data_FINAL <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Create significance flag
+Autumn_vsSpringOutl_merged_data_FINAL <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Set SNP factor levels based on sorted order to preserve genomic position
+Autumn_vsSpringOutl_merged_data_FINAL$SNP <- factor(Autumn_vsSpringOutl_merged_data_FINAL$SNP,
+                                       levels = unique(Autumn_vsSpringOutl_merged_data_FINAL$SNP))
+
+# Split data into two subsets and preserve factor levels
+non_sig_autumn_springoutliers <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_vsSpringOutl_merged_data_FINAL$SNP)))
+
+sig_autumn_springoutliers <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Autumn_vsSpringOutl_merged_data_FINAL$SNP)))
+
+
+# Plot
+upwards_plot_SPO <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_autumn_springoutliers,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_autumn_springoutliers,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  ylim(0, 60) +  # Set y-axis limits between 0 and 50
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for Autumn vs Spring_Outliers",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+# Filter significant SNPs for Autumn
+significant_Autumn_vsSpringOutl_snps <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  filter(BONF < 0.05)
+
+View(significant_Autumn_vsSpringOutl_snps)
+
+# Export significant SNPs for Autumn to a CSV file
+write.csv(
+  significant_Autumn_vsSpringOutl_snps,
+  "~/path/to/directory/Significant_SNPs_Autumn_vsSpringOutl.csv",
+  row.names = FALSE
+)
+
+######################################
+## Spring_vs_AutumnOutliers Analysis
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # For multiple color scales
+
+# Ensure CHROM and POS are numeric and sort the data
+Spring_vsSpringOutl_merged_data_FINAL$CHROM <- as.numeric(Spring_vsSpringOutl_merged_data_FINAL$CHROM)
+Spring_vsSpringOutl_merged_data_FINAL$POS <- as.numeric(Spring_vsSpringOutl_merged_data_FINAL$POS)
+
+Spring_vsSpringOutl_merged_data_FINAL <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  arrange(CHROM, POS)
+
+# Assign alternating colors to non-significant points based on CHROM
+Spring_vsSpringOutl_merged_data_FINAL <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
+
+# Create significance flag
+Spring_vsSpringOutl_merged_data_FINAL <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
+
+# Set SNP factor levels based on sorted order to preserve genomic position
+Spring_vsSpringOutl_merged_data_FINAL$SNP <- factor(Spring_vsSpringOutl_merged_data_FINAL$SNP,
+                                       levels = unique(Spring_vsSpringOutl_merged_data_FINAL$SNP))
+
+# Split data into two subsets and preserve factor levels
+non_sig_spring_springoutliers <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Spring_vsSpringOutl_merged_data_FINAL$SNP)))
+
+sig_spring_springoutliers <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(Spring_vsSpringOutl_merged_data_FINAL$SNP)))
+
+
+# Plot
+downwards_plot_SPO <- ggplot() +
+  # Non-significant points (grey/black)
+  geom_point(
+    data = non_sig_spring_springoutliers,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    alpha = 0.5, size = 1
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Reset color scale for significant points
+
+  # Significant points (colored red)
+  geom_point(
+    data = sig_spring_springoutliers,
+    aes(x = SNP, y = -log10(BONF)),
+    color = "red",  # Set color to red for significant points
+    alpha = 0.9, size = 1.5
+  ) +
+
+  # Significance threshold line
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Set the y-axis limits
+  scale_y_reverse(limits = c(60, 0)) +  # Flip the y-axis
+
+  # Preserve SNP order
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance
+  theme_classic() +
+  labs(
+    title = "Chi2 Test for Spring vs Spring_Outliers",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+# Filter significant SNPs for Spring
+significant_Spring_vsSpringOutl_snps <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  filter(BONF < 0.05)
+
+View(significant_Spring_vsSpringOutl_snps)
+
+# Export significant SNPs for Spring to a CSV file
+write.csv(
+  significant_Spring_vsSpringOutl_snps,
+  "~/path/to/directory/Significant_SNPs_Spring_vsSpringOutl.csv",
+  row.names = FALSE
+)
+
+## ------- Plotting composite contrasts plots -------
+
+# Load required libraries
+library(ggplot2)
+library(cowplot)
+
+# Combine the plots using cowplot
+combined_plot <- plot_grid(
+  upwards_plot, downwards_plot,
+  ncol = 1,  # Arrange plots in a single column
+  align = "v",  # Align vertically
+  rel_heights = c(1, 1)  # Equal height for both plots
+)
+
+# Display the combined plot
+print(combined_plot)
+
+
+# Combine the plots using cowplot
+combined_plot_SPO <- plot_grid(
+  upwards_plot_SPO, downwards_plot_SPO,
+  ncol = 1,  # Arrange plots in a single column
+  align = "v",  # Align vertically
+  rel_heights = c(1, 1)  # Equal height for both plots
+)
+
+# Display the combined plot
+print(combined_plot)
+print(combined_plot_SPO)
+
+## -------  End plot 1c-d -------
+
+
+
+# ===============================
+#  Script for Figure 1e-f plot
+# =============================== 
+
+# Load necessary libraries
+library(dplyr)
+library(tidyr)
+library(pheatmap)
+
+# Load the frequency data
+Autumn_merged_data_FINAL
+Spring_vs_AutumnOutl_merged_data_FINAL
+Autumn_vsSpringOutl_merged_data_FINAL
+Spring_vsSpringOutl_merged_data_FINAL
+
+##
+
+# Ensure consistency in A1 and A2 between the datasets
+# Align alleles in Spring_vs_AutumnOutl_merged_data_FINAL to match Autumn_merged_data_FINAL
+Spring_vs_AutumnOutl_merged_data_FINAL <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  mutate(
+    # Check if A1 and A2 are swapped compared to Autumn_merged_data_FINAL
+    swap_alleles = ifelse(
+      SNP %in% Autumn_merged_data_FINAL$SNP & 
+      A1 != Autumn_merged_data_FINAL$A1[match(SNP, Autumn_merged_data_FINAL$SNP)],
+      TRUE, FALSE
+    ),
+    # Swap A1 and A2 if needed
+    A1 = ifelse(swap_alleles, A2, A1),
+    A2 = ifelse(swap_alleles, A1, A2),
+    # Swap MAF_A and MAF_U if alleles are swapped
+    MAF_A = ifelse(swap_alleles, 1 - MAF_A, MAF_A),
+    MAF_U = ifelse(swap_alleles, 1 - MAF_U, MAF_U)
+  ) %>%
+  dplyr::select(-swap_alleles)  # Remove the temporary column
+
+# Align alleles in Spring_vs_AutumnOutl_merged_data_FINAL to match Autumn_merged_data_FINAL
+Autumn_vsSpringOutl_merged_data_FINAL <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  mutate(
+    # Check if A1 and A2 are swapped compared to Autumn_merged_data_FINAL
+    swap_alleles = ifelse(
+      SNP %in% Autumn_merged_data_FINAL$SNP & 
+      A1 != Autumn_merged_data_FINAL$A1[match(SNP, Autumn_merged_data_FINAL$SNP)],
+      TRUE, FALSE
+    ),
+    # Swap A1 and A2 if needed
+    A1 = ifelse(swap_alleles, A2, A1),
+    A2 = ifelse(swap_alleles, A1, A2),
+    # Swap MAF_A and MAF_U if alleles are swapped
+    MAF_A = ifelse(swap_alleles, 1 - MAF_A, MAF_A),
+    MAF_U = ifelse(swap_alleles, 1 - MAF_U, MAF_U)
+  ) %>%
+  dplyr::select(-swap_alleles)  # Remove the temporary column
+
+# Align alleles in Spring_vs_AutumnOutl_merged_data_FINAL to match Autumn_merged_data_FINAL
+Spring_vsSpringOutl_merged_data_FINAL <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  mutate(
+    # Check if A1 and A2 are swapped compared to Autumn_merged_data_FINAL
+    swap_alleles = ifelse(
+      SNP %in% Autumn_merged_data_FINAL$SNP & 
+      A1 != Autumn_merged_data_FINAL$A1[match(SNP, Autumn_merged_data_FINAL$SNP)],
+      TRUE, FALSE
+    ),
+    # Swap A1 and A2 if needed
+    A1 = ifelse(swap_alleles, A2, A1),
+    A2 = ifelse(swap_alleles, A1, A2),
+    # Swap MAF_A and MAF_U if alleles are swapped
+    MAF_A = ifelse(swap_alleles, 1 - MAF_A, MAF_A),
+    MAF_U = ifelse(swap_alleles, 1 - MAF_U, MAF_U)
+  ) %>%
+  dplyr::select(-swap_alleles)  # Remove the temporary column
+
+###
+
+# Create CHROM_POS column 
+autumn_frq <- Autumn_merged_data_FINAL %>%
+  dplyr::select(CHROM, POS, MAF_A, MAF_U) %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_")) %>%  # Create CHROM_POS column
+  dplyr::rename(
+    Autumn_Outliers_MAF = MAF_A,  
+    Autumn_MAF = MAF_U            
+  )
+
+# Create CHROM_POS column 
+spring_frq <- Spring_vs_AutumnOutl_merged_data_FINAL %>%
+  dplyr::select(CHROM, POS, MAF_A, MAF_U) %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_")) %>%  # Create CHROM_POS column
+  dplyr::rename(
+    Autumn_Outliers_MAF = MAF_A,  
+    Spring_MAF = MAF_U            
+  )
+# Create CHROM_POS column
+autumn_sprout_frq <- Autumn_vsSpringOutl_merged_data_FINAL %>%
+  dplyr::select(CHROM, POS, MAF_A, MAF_U) %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_")) %>%  # Create CHROM_POS column
+  dplyr::rename(
+    Spring_Outliers_MAF = MAF_A,  
+    Autumn_MAF = MAF_U            
+  )
+
+# Create CHROM_POS column
+spring_sprout_frq <- Spring_vsSpringOutl_merged_data_FINAL %>%
+  dplyr::select(CHROM, POS, MAF_A, MAF_U) %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_")) %>%  # Create CHROM_POS column
+  dplyr::rename(
+    Spring_Outliers_MAF = MAF_A,  
+    Spring_MAF = MAF_U            
+  )
+
+################################################
+################################################
+library(tibble)
+
+# Merge the data
+# Drop the duplicate Autumn_Outliers_MAF column from one of the datasets before merging
+spring_frq <- spring_frq %>%
+  dplyr::select(-Autumn_Outliers_MAF)  # Remove the duplicate column from spring_frq
+
+autumn_sprout_frq <- autumn_sprout_frq %>%
+  dplyr::select(-Autumn_MAF) 
+
+# Merge the datasets
+merged_frq <- autumn_frq %>%
+  inner_join(spring_frq,  by = "CHROM_POS")
+
+merged_frq_2 <- merged_frq  %>%
+  inner_join(autumn_sprout_frq,  by = "CHROM_POS")
+
+# Prepare the data for the heatmap
+heatmap_data <- merged_frq_2 %>%
+  dplyr::select(CHROM_POS, Autumn_MAF, Autumn_Outliers_MAF, Spring_Outliers_MAF, Spring_MAF) %>%
+  column_to_rownames(var = "CHROM_POS")  # Set SNP as row names
+
+# Identify common SNPs
+significant_autumn_snps <- significant_autumn_snps %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))  # Combine CHROM and POS with an underscore
+
+significant_Spring_vs_AutumnOutl_snps <- significant_Spring_vs_AutumnOutl_snps %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))  # Combine CHROM and POS with an underscore
+
+significant_Autumn_vsSpringOutl_snps <- significant_Autumn_vsSpringOutl_snps %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))
+
+significant_Spring_vsSpringOutl_snps <- significant_Spring_vsSpringOutl_snps %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))
+
+# Get a reduced set of only the common significant SNPs
+# Intersect the first two datasets
+common_snps_1 <- intersect(significant_autumn_snps$CHROM_POS, significant_Spring_vs_AutumnOutl_snps$CHROM_POS)
+
+# Intersect the result with the third dataset
+common_snps_2 <- intersect(common_snps_1, significant_Autumn_vsSpringOutl_snps$CHROM_POS)
+
+# Intersect the result with the fourth dataset
+common_snps <- intersect(common_snps_2, significant_Spring_vsSpringOutl_snps$CHROM_POS)
+
+# Get all significant SNPs from both datasets
+
+# Combine the two datasets
+combined_snps <- bind_rows(significant_autumn_snps, significant_Spring_vs_AutumnOutl_snps, significant_Autumn_vsSpringOutl_snps, significant_Spring_vsSpringOutl_snps)
+unique_snps <- combined_snps %>%
+  distinct(CHROM_POS)  # Ensure CHROM_POS is unique
+unique_snps_vector <- unique_snps$CHROM_POS  # Extract the CHROM_POS column as a character vector
+
+
+# Filter the heatmap data to include only common SNPs
+#filtered_heatmap_data <- heatmap_data[rownames(heatmap_data) %in% common_snps, ]
+filtered_heatmap_data <- heatmap_data[rownames(heatmap_data) %in% unique_snps_vector, ]
+
+View(filtered_heatmap_data)
+
+# Convert to a numeric matrix
+heatmap_matrix <- as.matrix(filtered_heatmap_data)
+
+# Generate the heatmap
+
+# Transpose the heatmap matrix
+heatmap_matrix_transposed <- t(heatmap_matrix)
+
+# Create the annotation_row data frame with proper row names (since the matrix is transposed)
+annotation_row <- data.frame(Group = c("Autumn", "Autumn_Outliers", "Spring_Outliers", "Spring"))
+rownames(annotation_row) <- rownames(heatmap_matrix_transposed)  # Set row names to match the transposed matrix row names
+
+gaps_positions <- c(40, 41, 70, 105, 116, 119, 133, 140, 141, 380, 383, 476, 484, 721, 800, 870, 810, 919, 920, 929)
+
+## -------  Generate plot 1e -------
+# Generate the heatmap with gaps
+library(pheatmap)
+
+pheatmap(
+     heatmap_matrix_transposed,
+     cluster_rows = FALSE,  # Do not cluster groups (now rows after transposing)
+     cluster_cols = FALSE,  # Do not cluster SNPs (now columns after transposing)
+     color = colorRampPalette(c("blue", "white", "red"))(50),  # Color scale
+     breaks = seq(0, 1, length.out = 51),  # Fix the color scale to range from 0 to 1
+     main = "Heatmap of Minor Allele Frequencies (Transposed)",
+     border_color = "black",  # Border color for cells
+     annotation_row = annotation_row,  # Add annotation for rows (transposed groups)
+     show_rownames = TRUE,  # Show group names (now rows)
+     show_colnames = TRUE,
+     fontsize_col = 2,  # Show SNP names (now columns)
+     #gaps_col = gaps_positions, # Add gaps at specified positions
+     number_color = "black",
+ )
+ 
+## -------  End plot 1e -------
+
+
+# Create a list of all the significant SNPs from the heatmap_matrix object which are the rownames
+# Create a data frame with the significant SNPs
+significant_snps_df_TEST <- data.frame(CHROM_POS = colnames(heatmap_matrix_transposed))
+
+# Create two new columns which seperate the CHROM and POS but keeps the original CHROM_POS column intact
+significant_snps_df_TEST <- significant_snps_df_TEST %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+# Rename the column header in converted_matrix from ID to CHROM_POS
+colnames(converted_matrix)[3] <- "CHROM_POS"
+
+# Create a new data frame that only contains data with matiching CHROM_POS columns between the two data frames
+converted_matrix_TEST <- as.data.frame(converted_matrix) %>%
+  inner_join(significant_snps_df_TEST, by = "CHROM_POS")
+
+# Load the group definitions
+Autumn_Group <- read.table("~/path/to/directory/Autumn_Group.txt", quote="\"", comment.char="")
+Autumn_Outlier_Group <- read.table("~/path/to/directory/Autumn_Outlier_Group.txt", quote="\"", comment.char="")
+Spring_Group <- read.table("~/path/to/directory/Spring_Group.txt", quote="\"", comment.char="")
+Spring_Outlier_Group <- read.table("~/path/to/directory/Spring_Outlier_Group.txt", quote="\"", comment.char="")
+
+# List of all your group data frames and their names
+group_objects <- list(
+  Autumn_Group = Autumn_Group,
+  Autumn_Outlier_Group = Autumn_Outlier_Group,
+  Spring_Group = Spring_Group,
+  Spring_Outlier_Group = Spring_Outlier_Group
+)
+
+# Combine into one data frame with Group labels
+sample_group_df <- bind_rows(
+  lapply(names(group_objects), function(group_name) {
+    df <- group_objects[[group_name]]
+    df$Group <- group_name
+    colnames(df)[1] <- "Sample"
+    return(df)
+  })
+)
+
+library(dplyr)
+library(tidyr)
+
+# Pivot the SNP matrix long
+long_df <- converted_matrix_TEST %>%
+  pivot_longer(
+    cols = all_of(sample_group_df$Sample),  # only group-mapped samples
+    names_to = "Sample",
+    values_to = "Genotype"
+  )
+
+# Add group labels to long format data
+long_df <- long_df %>%
+  left_join(sample_group_df, by = "Sample")
+
+
+# Calculate heterozygosity
+heterozygosity_df <- long_df %>%
+  filter(!is.na(Genotype)) %>%                   # Remove missing calls
+  group_by(CHROM_POS, Group) %>%
+  summarise(
+    n_het = sum(Genotype == "1"),                # Count heterozygotes
+    n_total = n(),                               # Count total genotype calls
+    heterozygosity = n_het / n_total             # Calculate frequency
+  ) %>%
+  ungroup()
+
+library(dplyr)
+library(ggplot2)
+
+# Optional: Rename the Group labels to remove "_Group"
+heterozygosity_df <- heterozygosity_df %>%
+  mutate(Group = recode(Group,
+                        "Autumn_Group" = "Autumn",
+                        "Autumn_Outlier_Group" = "Autumn_Outlier",
+                        "Spring_Outlier_Group" = "Spring_Outlier",
+                        "Spring_Group" = "Spring"))
+
+# Set desired group order
+heterozygosity_df$Group <- factor(heterozygosity_df$Group,
+                                   levels = c("Spring", "Spring_Outlier", "Autumn_Outlier", "Autumn"))
+
+
+## -------  Generate plot 1f -------
+ggplot(heterozygosity_df, aes(x = CHROM_POS, y = Group, fill = heterozygosity)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "white", mid = "#fe9929", high = "#b10026", 
+                       midpoint = 0.5, na.value = "grey90", 
+                       limits = c(0, 1), oob = scales::squish) +
+  labs(title = "Heterozygosity Frequency per Group per SNP",
+       x = "SNP (CHROM_POS)", y = "Group", fill = "Heterozygosity") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),  # Hide x-axis text for readability
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_text(face = "bold")
+  )
+
+## -------  End plot 1f -------
+
+## ------- End Script -------
