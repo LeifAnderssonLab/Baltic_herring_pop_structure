@@ -154,23 +154,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+# Ensure CHROM and POS are numeric and sort the data
 KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 KAL05_vs_SOUTH_merged_data$SNP <- factor(KAL05_vs_SOUTH_merged_data$SNP,
                                        levels = unique(KAL05_vs_SOUTH_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL05_vs_SOUTH_merged_data$SNP)))
@@ -179,7 +179,7 @@ sig_KAL05_vs_SOUTH_merged_data <- KAL05_vs_SOUTH_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL05_vs_SOUTH_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 upwards_plot_KAL05 <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -226,23 +226,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+#  Ensure CHROM and POS are numeric and sort the data
 KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 KAL05_vs_CENTRAL_merged_data$SNP <- factor(KAL05_vs_CENTRAL_merged_data$SNP,
                                        levels = unique(KAL05_vs_CENTRAL_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL05_vs_CENTRAL_merged_data$SNP)))
@@ -251,7 +251,7 @@ sig_KAL05_vs_CENTRAL_merged_data <- KAL05_vs_CENTRAL_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL05_vs_CENTRAL_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 downwards_plot_KAL05 <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -297,7 +297,7 @@ downwards_plot_KAL05 <- ggplot() +
 library(ggplot2)
 library(cowplot)
 
-# Step 3: Combine the plots using cowplot
+# Combine the plots using cowplot
 combined_plot_KAL05 <- plot_grid(
   upwards_plot_KAL05, downwards_plot_KAL05,
   ncol = 1,  # Arrange plots in a single column
@@ -305,7 +305,7 @@ combined_plot_KAL05 <- plot_grid(
   rel_heights = c(1, 1)  # Equal height for both plots
 )
 
-# Step 4: Display the combined plot
+# Display the combined plot
 print(combined_plot_KAL05)
 
 
@@ -316,23 +316,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+# Ensure CHROM and POS are numeric and sort the data
 KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 KAL6_vs_SOUTH_merged_data$SNP <- factor(KAL6_vs_SOUTH_merged_data$SNP,
                                        levels = unique(KAL6_vs_SOUTH_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL6_vs_SOUTH_merged_data$SNP)))
@@ -341,7 +341,7 @@ sig_KAL6_vs_SOUTH_merged_data <- KAL6_vs_SOUTH_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL6_vs_SOUTH_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 upwards_plot_KAL6 <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -388,23 +388,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+# Ensure CHROM and POS are numeric and sort the data
 KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 KAL6_vs_CENTRAL_merged_data$SNP <- factor(KAL6_vs_CENTRAL_merged_data$SNP,
                                        levels = unique(KAL6_vs_CENTRAL_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL6_vs_CENTRAL_merged_data$SNP)))
@@ -413,7 +413,7 @@ sig_KAL6_vs_CENTRAL_merged_data <- KAL6_vs_CENTRAL_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(KAL6_vs_CENTRAL_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 downwards_plot_KAL6 <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -459,7 +459,7 @@ downwards_plot_KAL6 <- ggplot() +
 library(ggplot2)
 library(cowplot)
 
-# Step 3: Combine the plots using cowplot
+# Combine the plots using cowplot
 combined_plot_KAL6 <- plot_grid(
   upwards_plot_KAL6, downwards_plot_KAL6,
   ncol = 1,  # Arrange plots in a single column
@@ -467,7 +467,7 @@ combined_plot_KAL6 <- plot_grid(
   rel_heights = c(1, 1)  # Equal height for both plots
 )
 
-# Step 4: Display the combined plot
+# Display the combined plot
 print(combined_plot_KAL6)
 
 
@@ -478,23 +478,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+# Ensure CHROM and POS are numeric and sort the data
 STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 STH36A_vs_SOUTH_merged_data$SNP <- factor(STH36A_vs_SOUTH_merged_data$SNP,
                                        levels = unique(STH36A_vs_SOUTH_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(STH36A_vs_SOUTH_merged_data$SNP)))
@@ -503,7 +503,7 @@ sig_STH36A_vs_SOUTH_merged_data <- STH36A_vs_SOUTH_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(STH36A_vs_SOUTH_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 upwards_plot_STH36A <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -550,23 +550,23 @@ library(ggplot2)
 library(dplyr)
 library(ggnewscale)  # For multiple color scales
 
-# Step 1: Ensure CHROM and POS are numeric and sort the data
+# Ensure CHROM and POS are numeric and sort the data
 STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
   arrange(CHROM, POS)
 
-# Step 2: Assign alternating colors to non-significant points based on CHROM
+# Assign alternating colors to non-significant points based on CHROM
 STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
   mutate(PointColor = ifelse(CHROM %% 2 == 0, "black", "grey"))
 
-# Step 3: Create significance flag
+# Create significance flag
 STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
   mutate(significance = ifelse(BONF < 0.05, "significant", "non-significant"))
 
-# Step 4: Set SNP factor levels based on sorted order to preserve genomic position
+# Set SNP factor levels based on sorted order to preserve genomic position
 STH36A_vs_CENTRAL_merged_data$SNP <- factor(STH36A_vs_CENTRAL_merged_data$SNP,
                                        levels = unique(STH36A_vs_CENTRAL_merged_data$SNP))
 
-# Step 5: Split data into two subsets and preserve factor levels
+# Split data into two subsets and preserve factor levels
 non_sig_STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
   filter(significance == "non-significant") %>%
   mutate(SNP = factor(SNP, levels = levels(STH36A_vs_CENTRAL_merged_data$SNP)))
@@ -575,7 +575,7 @@ sig_STH36A_vs_CENTRAL_merged_data <- STH36A_vs_CENTRAL_merged_data %>%
   filter(significance == "significant") %>%
   mutate(SNP = factor(SNP, levels = levels(STH36A_vs_CENTRAL_merged_data$SNP)))
 
-# Step 6: Plot
+# Plot
 downwards_plot_STH36A <- ggplot() +
   # Non-significant points (grey/black)
   geom_point(
@@ -621,7 +621,7 @@ downwards_plot_STH36A <- ggplot() +
 library(ggplot2)
 library(cowplot)
 
-# Step 3: Combine the plots using cowplot
+# Combine the plots using cowplot
 combined_plot_STH36A <- plot_grid(
   upwards_plot_STH36A, downwards_plot_STH36A,
   ncol = 1,  # Arrange plots in a single column
@@ -629,7 +629,7 @@ combined_plot_STH36A <- plot_grid(
   rel_heights = c(1, 1)  # Equal height for both plots
 )
 
-# Step 4: Display the combined plot
+# Display the combined plot
 print(combined_plot_STH36A)
 
 
