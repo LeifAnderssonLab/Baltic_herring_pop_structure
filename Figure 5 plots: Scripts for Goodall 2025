@@ -661,3 +661,5 @@ ggplot(data_long_region, aes(x = WEEK_NUM, y = Frequency, group = Region, color 
     color = "Region"  # Add a label for the legend
   ) +
   theme_classic()
+
+## ------- End Script -------
