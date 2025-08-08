@@ -366,16 +366,16 @@ write.table(
 
 # Now we want to visualise the allele frequencies of the significant SNPs across WEEK_NUM
 
- # Step 1: Create a new column CHROM_POS in snp_annotations_genes
+ # Create a new column CHROM_POS in snp_annotations_genes
 snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
 
 snp_annotations_genes$SNP_Chr <- as.character(snp_annotations_genes$SNP_Chr)
 snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
 
-# Step 2: Identify matching columns in Correlation_data
+# Identify matching columns in Correlation_data
 matching_columns <- intersect(colnames(Correlation_data), snp_annotations_genes$CHROM_POS)
 
-# Step 3: Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
+# Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
 filtered_data <- Correlation_data[, c(3:12)]
 filtered_data2 <- Correlation_data[, c(matching_columns)]
 
@@ -390,10 +390,10 @@ str(final_filtered_data)
 #  Script for Figure 5b plots
 # ===============================
 
-# Step 1: Identify allele frequency columns (columns 9 onwards)
+# Identify allele frequency columns (columns 9 onwards)
 allele_columns <- colnames(final_filtered_data)[11:ncol(final_filtered_data)]
 
-# Step 2: Polarize the allele frequency data
+# Polarize the allele frequency data
 for (col in allele_columns) {
   # Calculate the mean allele frequency for the column
   mean_freq <- mean(final_filtered_data[[col]], na.rm = TRUE)
@@ -405,7 +405,7 @@ for (col in allele_columns) {
 }
 
 # Generate a heatmap of the allele frequencies across WEEK_NUM
-# Step 1: Extract CHROM and POS from SNP names
+# Extract CHROM and POS from SNP names
 library(dplyr)
 library(tidyr)
 library(ggplot2)
