@@ -1,0 +1,347 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure 3 plots
+
+# ===============================
+#  Script for Figure 3 plots
+# ===============================
+
+
+# Set the working directory
+setwd("path/to/directory/")  # Replace with your actual path
+
+# Load necessary libraries
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(tidyverse)
+
+
+# Load the required datasets
+load("~/path/to/directory/KMeans_Assigned_Groups_K3.RData")
+load("~/path/to/directory/Calculated_Correlations_For_Upset.RData")
+
+SPRING_Post_KMeans_Assignment_ALL_Metadata <- read.delim("~/path/to/directory/SPRING_Post_KMeans_Assignment_ALL_Metadata.txt")
+
+metadata <- SPRING_Post_KMeans_Assignment_ALL_Metadata[, -c(1:2)]
+
+## -------  Upset plot (1a) -------
+
+load("~/path/to/directory/Calculated_Correlations_For_Upset.RData")
+
+# Create upset plot for all of the different significant_* datasets
+
+# Load libraries
+library(UpSetR)
+
+# Extract Allele columns
+upset_datasets <- list(
+  Latitude = significant_latitude$Allele,
+  Week = significant_week$Allele,
+  Salinity = significant_salinity$Allele,
+  SSTemp = significant_Temp$Allele
+)
+
+# Create a binary presence/absence matrix
+library(tidyr)
+library(dplyr)
+
+# Combine all Alleles into a unique list
+all_alleles <- unique(unlist(upset_datasets))
+
+# Create a binary matrix
+binary_matrix <- sapply(upset_datasets, function(set) as.integer(all_alleles %in% set))
+rownames(binary_matrix) <- all_alleles
+
+# Convert to data frame for UpSetR
+binary_df <- as.data.frame(binary_matrix)
+
+# Rename specific columns in binary_df
+colnames(binary_df)[colnames(binary_df) == "Salinity"] <- "Bottom_Salinity"
+colnames(binary_df)[colnames(binary_df) == "SSTemp"] <- "Bottom_Temp"
+
+# Generate UpSet plot
+upset(binary_df, sets = c("Latitude", "Week", "Bottom_Salinity", "Bottom_Temp"), 
+      order.by = "freq", 
+      main.bar.color = "dodgerblue", 
+      sets.bar.color = "darkorange")
+
+
+# Find the unique SNP associated with each parameter
+# Unique to Latitude
+unique_to_latitude <- rownames(binary_df[binary_df$Latitude == 1 & 
+                                         binary_df$Week == 0 & 
+                                         binary_df$Bottom_Salinity == 0 & 
+                                         binary_df$Bottom_Temp == 0, ])
+
+# Unique to Week
+unique_to_week <- rownames(binary_df[binary_df$Latitude == 0 & 
+                                      binary_df$Week == 1 & 
+                                      binary_df$Bottom_Salinity == 0 & 
+                                      binary_df$Bottom_Temp == 0, ])
+
+# Unique to Bottom_Salinity
+unique_to_bottom_salinity <- rownames(binary_df[binary_df$Latitude == 0 & 
+                                                 binary_df$Week == 0 & 
+                                                 binary_df$Bottom_Salinity == 1 & 
+                                                 binary_df$Bottom_Temp == 0, ])
+
+# Unique to Bottom_Temp
+unique_to_bottom_temp <- rownames(binary_df[binary_df$Latitude == 0 & 
+                                             binary_df$Week == 0 & 
+                                             binary_df$Bottom_Salinity == 0 & 
+                                             binary_df$Bottom_Temp == 1, ])
+
+
+# Function to split and filter CHROM values
+process_unique_set <- function(unique_set) {
+  # Ensure that the format is exactly "CHROM_POS"
+  unique_set <- unique_set[grep("^\\d+_\\d+$", unique_set)]
+  
+  # Split into CHROM and POS
+  df <- as.data.frame(do.call(rbind, strsplit(unique_set, "_")))
+  colnames(df) <- c("CHROM", "POS")
+  
+  # Convert CHROM and POS to numeric
+  df$CHROM <- as.numeric(df$CHROM)
+  df$POS <- as.numeric(df$POS)
+  
+  # Filter CHROM values between 1 and 26
+  df <- df[df$CHROM >= 1 & df$CHROM <= 26, ]
+  
+  return(df)
+}
+
+# Process each dataset one at a time
+unique_to_latitude_processed <- process_unique_set(unique_to_latitude)
+unique_to_week_processed <- process_unique_set(unique_to_week)
+unique_to_bottom_salinity_processed <- process_unique_set(unique_to_bottom_salinity)
+unique_to_bottom_temp_processed <- process_unique_set(unique_to_bottom_temp)
+
+# View results (example for Latitude)
+head(unique_to_latitude_processed)
+
+### these can now be annotated with the Annotate_SNP_set script
+
+
+## -------  Bar plot (1b) -------
+
+## 1. Combine Significant SNPs:
+# Add comparison label
+significant_latitude$comparison <- "Latitude"
+significant_week$comparison <- "Week"
+significant_salinity$comparison <- "Salinity"
+significant_Temp$comparison <- "SSTemp"
+
+# Combine into one
+all_significant <- bind_rows(significant_latitude, significant_week, significant_salinity, significant_Temp)
+
+# Separate CHROM and POS if not already done
+all_significant <- all_significant %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE)
+
+# Convert to numeric
+all_significant$CHROM <- as.numeric(all_significant$CHROM)
+all_significant$POS <- as.numeric(all_significant$POS)
+
+# Group and count occurrences
+significance_summary <- all_significant %>%
+  group_by(Allele, CHROM, POS) %>%
+  summarise(comparisons = paste(sort(unique(comparison)), collapse = ","),
+            n_comparisons = n(), .groups = "drop")
+
+
+## 2. Add Full SNPChip Positions:
+# Create a data frame with chromosome lengths (lengths are based on Ensembl Chv2.0.2)
+chromosome_data <- data.frame(
+  chromosome = factor(1:26, levels = 26:1),  # Reverse the order of levels
+  length = c(33084258, 33010319, 32527562, 32267647, 31586861, 31461554, 30990621, 30729556, 30477381, 30227731, 30096327, 30022480, 29845739, 29332771, 28713521, 27773822, 27568510, 27247294, 27130643, 26694162, 26465981, 25664052, 25292897, 20091098, 14924191, 12443209)
+)
+
+SNPChip_data <- filtered_sorted_data_ref[, c(2,3)]
+
+
+# Merge with significance summary
+merged_data <- significance_summary
+
+# Classify SNPs
+merged_data <- merged_data %>%
+  mutate(category = case_when(
+    is.na(n_comparisons) ~ "Not significant",
+    n_comparisons == 1 ~ comparisons,
+    n_comparisons > 1 ~ "Multiple"
+  ))
+
+## 3. Define Colors for Categories:
+category_colors <- c(
+  "Not significant" = "lightgrey",
+  "Latitude" = "#66a61e",
+  "Week" = "#d95f02",
+  "Salinity" = "#7570b3",
+  "SSTemp" = "#e7298a",
+  "Multiple" = "black"
+)
+
+## 4. Plot with ggplot2:
+highlight_positions <- merged_data %>%
+  filter(category != "Not significant") %>%
+  mutate(chromosome = factor(CHROM, levels = 26:1))
+
+background_positions <- merged_data %>%
+  filter(category == "Not significant") %>%
+  mutate(chromosome = factor(CHROM, levels = 26:1))
+
+# Base chromosome tubes
+chromosome_data$chromosome <- factor(chromosome_data$chromosome, levels = 26:1)
+
+single_plot <- ggplot(chromosome_data, aes(x = chromosome, y = length)) +
+  geom_segment(aes(x = chromosome, xend = chromosome, y = 0, yend = length),
+               size = 10, lineend = "round", color = "black") +
+  geom_segment(aes(x = chromosome, xend = chromosome, y = 0, yend = length),
+               size = 8, lineend = "round", color = "white") +
+
+  # Light grey SNPs
+  geom_segment(data = background_positions,
+               aes(x = chromosome, xend = chromosome, y = POS - 20000, yend = POS + 20000),
+               color = category_colors["Not significant"], size = 8.1) +
+
+  # Colored SNPs
+  geom_segment(data = highlight_positions,
+               aes(x = chromosome, xend = chromosome, y = POS - 100000, yend = POS + 100000, color = category),
+               size = 8.1) +
+
+  scale_color_manual(values = category_colors) +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Chromosome", y = "Length", title = "All SNPs with Highlighted Associations") +
+  theme(axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        panel.border = element_rect(color = "black", fill = NA, size = 1))
+
+# Subset the highlight_positions data
+black_highlights <- subset(highlight_positions, category == "Multiple")
+coloured_highlights <- subset(highlight_positions, category != "Multiple")
+
+# Start plotting
+single_plot <- ggplot(chromosome_data, aes(x = chromosome, y = length)) +
+  # Chromosome backbone (black + white tube)
+  geom_segment(aes(x = chromosome, xend = chromosome, y = 0, yend = length),
+               size = 10, lineend = "round", color = "black") +
+  geom_segment(aes(x = chromosome, xend = chromosome, y = 0, yend = length),
+               size = 8, lineend = "round", color = "white") +
+
+  # Light grey SNPs (Not significant)
+  geom_segment(data = background_positions,
+               aes(x = chromosome, xend = chromosome,
+                   y = POS - 10000, yend = POS + 10000),
+               color = category_colors["Not significant"], size = 8.1) +
+
+  # Black SNPs (Multiple category, background layer)
+  geom_segment(data = black_highlights,
+               aes(x = chromosome, xend = chromosome,
+                   y = POS - 20000, yend = POS + 20000),
+               color = category_colors["Multiple"], size = 8.1) +
+
+  # Colored SNPs (foreground)
+  geom_segment(data = coloured_highlights,
+               aes(x = chromosome, xend = chromosome,
+                   y = POS - 80000, yend = POS + 80000,
+                   color = category),
+               size = 8.1) +
+
+  scale_color_manual(values = category_colors) +
+  coord_flip() +
+  theme_minimal() +
+  labs(x = "Chromosome", y = "Length", title = "All SNPs with Highlighted Associations") +
+  theme(
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    panel.border = element_rect(color = "black", fill = NA, size = 1)
+  )
+
+print(single_plot)
+
+
+## -------  PCA Biplot (1c) -------
+# Rename the ID column to Sample in principal_components
+colnames(principal_components)[colnames(principal_components) == "ID"] <- "Sample"
+
+# Perform a left join to add PC1 through PC10 to the metadata
+metadata_with_pcs <- metadata %>%
+  left_join(principal_components, by = "Sample")
+
+# Select relevant abiotic columns using base R
+abiotic_data <- metadata_with_pcs[, c("BOTTOM_TEMP", "BOTTOM_SALINITY", "LATITUDE", "WEEK_NUM")]
+
+# Ensure abiotic_data is numeric and has no missing values
+abiotic_data <- abiotic_data %>%
+  mutate(across(everything(), as.numeric)) %>%
+  filter(complete.cases(.))
+
+# Extract PCA scores from metadata_with_pcs
+pca_scores <- metadata_with_pcs[, c("PC1", "PC2")]
+
+
+# Run envfit to project abiotic variables onto the PCA
+abiotic_fit <- envfit(pca_scores, abiotic_data, permutations = 999)
+
+# Extract scores for arrows (abiotic variables)
+arrow_data <- as.data.frame(abiotic_fit$vectors$arrows * sqrt(abiotic_fit$vectors$r))
+arrow_data$labels <- rownames(arrow_data)
+
+# Scale arrows to fit the PCA plot
+max_pca_range <- max(abs(pca_scores$PC1), abs(pca_scores$PC2))  # Maximum PCA score range
+max_arrow_length <- max(sqrt(rowSums(arrow_data[, 1:2]^2)))     # Maximum arrow length
+arrow_data[, 1:2] <- arrow_data[, 1:2] * (max_pca_range / max_arrow_length * 0.7)  # Scale factor
+
+# Define custom colors for clusters
+mycols <- c("black", "red", "blue")
+
+# Flip PC1 in metadata_with_pcs
+#metadata_with_pcs <- metadata_with_pcs %>%
+#  mutate(PC1 = -PC1)
+
+# Flip PC1 in arrow_data
+arrow_data$PC1 <- -arrow_data$PC1
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("STH36A_SPRING", "KAL6_SPRING", "KAL05_SPRING", "GAV17_SPRING", "BLE07_SPRING", "UPP08_SPRING"), ggplot_data$Sample, NA)
+
+
+# Create the PCA biplot using metadata_with_pcs
+ggplot(data = metadata_with_pcs, aes(x = -PC1, y = PC2, color = as.factor(KMeansCluster))) +
+  geom_point(size = 3) +
+  geom_segment(data = arrow_data,
+               aes(x = 0, y = 0, xend = PC1, yend = PC2),
+               arrow = arrow(length = unit(0.2, "cm")), color = "red") +  # Add arrows
+  geom_text(data = arrow_data, aes(x = PC1, y = PC2, label = labels),
+            color = "red", hjust = 0.5, vjust = 0.5) +  # Add labels for arrows
+    #geom_text(aes(label = Sample), hjust = 0.5, vjust = -0.5, size = 3) +  # Add point labels
+  labs(
+    title = "PCA Biplot with Abiotic Factors",
+    x = paste("PC1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    color = "Cluster"
+  ) +
+  stat_ellipse(aes(fill = as.factor(KMeansCluster)), level = 0.95, alpha = 0.8) +  # Add ellipses
+  scale_color_manual(values = mycols) +  # Use the manual color scheme
+  theme_classic() +
+  theme(legend.position = "right")  # Adjust legend position if needed
+
+# Extract the arrow coordinates and R-squared values
+arrow_values <- as.data.frame(abiotic_fit$vectors$arrows)
+arrow_r_squared <- abiotic_fit$vectors$r
+
+# Combine the arrow coordinates and R-squared values into a single data frame
+arrow_summary <- cbind(arrow_values, R_squared = arrow_r_squared)
+
+# Add row names (abiotic factor names) as a column
+arrow_summary <- arrow_summary %>%
+  rownames_to_column(var = "Abiotic_Factor")
+
+# Print the arrow summary
+print(arrow_summary)
+
