@@ -1,0 +1,2265 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure S1-4 plots
+
+# ===============================
+#  Script for Figure S1 plot
+# ===============================
+
+# Create the assignmment bar plot with outliers laballed diff colours
+library(ggplot2)
+library(dplyr)
+
+# Import the data
+Seasonal_Assignment_Summary_Counts_and_Metadata <- read.delim("path/to/directoty/Metadata_for_BarCharts.txt")
+
+# Group data by FID, LATITUDE, and Outlier_Status, and calculate counts
+updated_data <- Seasonal_Assignment_Summary_Counts_and_Metadata %>%
+  group_by(FID, LATITUDE, Outlier_Status) %>%
+  summarize(count = n(), .groups = "drop")  # Count the number of samples per group
+
+# Pre-sort the data by LATITUDE
+updated_data <- updated_data %>%
+  arrange(LATITUDE)  # Sort by LATITUDE
+
+# Explicitly set the order of FID based on the pre-sorted data
+updated_data$FID <- factor(updated_data$FID, levels = unique(updated_data$FID))
+
+# Create the bar graph
+ggplot(updated_data, aes(x = FID, y = count, fill = Outlier_Status)) +
+  geom_bar(stat = "identity", position = "stack") +  # Stacked bar graph
+  labs(
+    title = "Sample Counts by Location (FID) and Outlier Status",
+    x = "FID (Ordered by Latitude)",
+    y = "Sample Count",
+    fill = "Outlier Status"
+  ) +
+  scale_fill_manual(
+    values = c('#7570b3', '#d95f02', '#1b9e77', '#e6ab02')  # Custom colors
+    ) +
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)  # Rotate x-axis labels for readability
+  )
+
+#################
+
+library(dplyr)
+
+# Summarize the data by FID, Outlier_Status, and Seson
+group_summary <- Seasonal_Assignment_Summary_Counts_and_Metadata %>%
+  group_by(FID, Outlier_Status, Seson) %>%
+  summarize(
+    Total_Samples = n(),  # Count the number of samples in each group
+    Latitude = unique(LATITUDE)  # Include the latitude for each FID
+  ) %>%
+  arrange(Latitude)  # Sort by latitude
+
+# Print the summary
+print(group_summary)
+
+# Optionally, write the summary to a CSV file
+write.csv(group_summary, "Group_Summary.csv", row.names = FALSE)
+
+library(dplyr)
+
+# Summarize the total counts for each Outlier_Status group
+outlier_status_totals <- Seasonal_Assignment_Summary_Counts_and_Metadata %>%
+  group_by(Outlier_Status) %>%
+  summarize(Total_Count = n(), .groups = "drop")  # Count the number of replicates in each group
+
+# Print the summary
+print(outlier_status_totals)
+
+## ------- End Figure S1 -------
+
+############################################################################################
+############################################################################################
+
+# ===============================
+#  Script for Figure S2 plot
+# ===============================
+
+# The following catalogs the scripts for the publication figures for the Baltic Clines paper
+setwd("/path/to/directory/")
+
+# PART 1: Curate the data in R
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(vcfR)
+library(ggplot2)
+
+# Import the base allele frequency dataset
+Swedish_ECoast_Allele_Freq <- read.csv("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025_AFreqs_ALLSamples.tsv", sep="")
+
+View(Swedish_ECoast_Allele_Freq)
+
+# Import the corresponding VCF file so I can bind the CHROM and POS values onto the allele frequencies
+vcf_unfiltered_ref <- vcfR::read.vcfR("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf")
+
+# Perform a left join to match "ID" and update "BP" in MEGA_Contrast
+merged_data_ref <- merge(vcf_unfiltered_ref@fix, Swedish_ECoast_Allele_Freq, by = "ID")
+
+# Clean up the data a little bit
+merged_data_ref <- merged_data_ref[, -c(6:11)]
+colnames(merged_data_ref)[2] <- "CHROM"
+colnames(merged_data_ref)[4] <- "REF"
+colnames(merged_data_ref)[5] <- "ALT"
+
+# Reorder the data based on CHR and POS and filter unplaced scaffolds
+# Sort data by chromosome and base pair position
+sorted_data_ref <- merged_data_ref %>%
+  arrange(CHROM, POS)
+
+sorted_data_ref$CHROM_POS <- paste(sorted_data_ref$CHROM, sorted_data_ref$POS, sep = "_")
+View(sorted_data_ref)
+
+sorted_data_ref <- sorted_data_ref[, c(173,2,3,4,5,7:172)] # This is ready to use now
+
+# PART 2: Run a PCA with all the data
+
+# Extract the numeric columns for PCA
+numeric_columns <- sorted_data_ref[, 6:ncol(sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("/path/to/directory/Allele_Freqs_And_Assignments/PerLocation_Metadata.txt")
+
+# Convert the $ID columns to upper case
+#TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = -PC2, color = Season, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+
+## -------  Script for Figure S2a -------
+
+# Identify samples with Count <= 1
+TEMP_AF_Labels$count <- as.numeric(TEMP_AF_Labels$count)
+invalid_samples <- TEMP_AF_Labels$ID[TEMP_AF_Labels$Season == "SPRING"]
+
+# Print the invalid samples
+print("Samples with Count <= 1:")
+print(invalid_samples)
+
+# Convert column names in sorted_data_ref to upper case
+colnames(sorted_data_ref) <- toupper(colnames(sorted_data_ref))
+
+# Convert invalid_samples to upper case
+invalid_samples <- toupper(invalid_samples)
+
+# Determine which columns should be removed from sorted_data_ref
+columns_to_remove <- which(colnames(sorted_data_ref) %in% invalid_samples)
+
+# Print the columns to be removed
+print("Columns to be removed:")
+print(columns_to_remove)
+
+# Create a new sorted_data_ref file with the specified columns removed
+Autumn_filtered_sorted_data_ref <- sorted_data_ref[, -columns_to_remove]
+
+# PART 2: Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- Autumn_filtered_sorted_data_ref[, 6:ncol(Autumn_filtered_sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- Autumn_filtered_sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(pca_result$x)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("Temp_AF_Labels.txt")
+
+# Convert the $ID columns to upper case
+TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = -PC2, color = Season, size = Count, label = label)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 1, hjust = 1, na.rm = TRUE, size = 3) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+###
+
+# Identify samples with Count <= 1
+TEMP_AF_Labels$count <- as.numeric(TEMP_AF_Labels$count)
+invalid_samples <- TEMP_AF_Labels$ID[TEMP_AF_Labels$count < 3]
+
+# Print the invalid samples
+print("Samples with Count <= 1:")
+print(invalid_samples)
+
+# Convert column names in sorted_data_ref to upper case
+colnames(sorted_data_ref) <- toupper(colnames(Autumn_filtered_sorted_data_ref))
+
+# Convert invalid_samples to upper case
+invalid_samples <- toupper(invalid_samples)
+
+# Determine which columns should be removed from sorted_data_ref
+columns_to_remove <- which(colnames(Autumn_filtered_sorted_data_ref) %in% invalid_samples)
+
+# Print the columns to be removed
+print("Columns to be removed:")
+print(columns_to_remove)
+
+# Create a new sorted_data_ref file with the specified columns removed
+Autumn_minnumber_sorted_data_ref <- Autumn_filtered_sorted_data_ref[, -columns_to_remove]
+
+# PART 2: Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- Autumn_minnumber_sorted_data_ref[, 6:ncol(Autumn_minnumber_sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- Autumn_minnumber_sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("Temp_AF_Labels.txt")
+
+# Convert the $ID columns to upper case
+TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#1b9e77", "#7570b3", "#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = PC2, color = Season, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+###
+
+# Perform K-means clustering
+library(ggplot2)
+
+# Perform K-means clustering
+pc_data_SpawningEco <- ggplot_data[, c("PC1", "PC2")]
+
+#set.seed(123)  # for reproducibility
+k_range <- 1:10  # example range of k values
+kmeans_results <- lapply(k_range, function(k) {
+  kmeans(pc_data_SpawningEco, centers = k)
+})
+wss <- sapply(kmeans_results, function(km) km$tot.withinss)
+
+# Create a data frame for ggplot
+elbow_data <- data.frame(k = k_range, WSS = wss)
+
+# Plot using ggplot2
+ggplot(elbow_data, aes(x = k, y = WSS)) +
+  geom_line(color = "black") +
+  geom_point(color = "black", size = 3) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(1, 10, by = 1)) +  # Ensure intervals of 1 on the x-axis
+  geom_text(
+    data = subset(elbow_data, k == 3),  # Select only the point where x = 2
+    aes(label = "Optimal K"),
+    hjust = -0.2,                         # Position label above the point
+    angle = 45, 
+    color = "red",                      # Color of the label
+    fontface = "bold"                   # Make the label bold
+  ) +
+  labs(
+    title = "Elbow Method for Optimal k",
+    x = "Number of clusters (k)",
+    y = "Within-cluster sum of squares (WSS)"
+  )
+
+# Perform K-means clustering with k = 2
+k <- 3
+kmeans_result <- kmeans(pc_data_SpawningEco, centers = k)
+
+# View cluster centers
+print(kmeans_result$centers)
+
+# Assign cluster labels to each data point
+cluster_labels <- kmeans_result$cluster
+
+# Verify the changes
+print(unique(ggplot_data$Cluster))
+
+# Add cluster labels to original ggplot_data
+ggplot_data$Cluster <- as.factor(cluster_labels)
+
+library(ggrepel)
+
+# Create PCA plot with clusters colored
+p <- ggplot(ggplot_data, aes(x = -PC1, y = PC2, color = Cluster, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 0.5, hjust = -0.5, size = 3, na.rm = TRUE) +  # Add labels for all samples
+    labs(
+    col = "Cluster",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  stat_ellipse() +
+  scale_color_manual(values = c("purple", "red", "blue", "green", "blue", "pink")) +  # Adjust colors as needed
+  theme_classic()
+
+# Display the plot
+print(p)
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("GAV16_AUTUMN", "VAB04_AUTUMN"), ggplot_data$Sample, NA)
+
+# Create PCA plot with clusters colored
+p <- ggplot(ggplot_data[-c(43) ,], aes(x = -PC1, y = PC2, color = Cluster, size = Count, label = label)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 0.5, hjust = 0.5, angle = 45, size = 3, na.rm = TRUE) +  # Add labels for all samples
+  labs(
+    col = "Cluster",
+    #title = "PCA Plot with K-means Clustering (k = 6)",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  stat_ellipse() +
+  scale_size_continuous(range = c(3, 9)) +  # Adjust the range: minimum size = 3, maximum size = 12
+  scale_color_manual(values = c("purple", "red", "blue", "green", "blue", "pink")) +  # Adjust colors as needed
+  theme_classic()
+
+# Display the plot
+print(p)
+
+## -------  END Script for Figure S2a -------
+
+
+## -------  Script for Figure S2b -------
+
+# Look at the cluster assignments based on the map
+library("ggplot2")
+theme_set(theme_bw())
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("ggspatial")
+
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(terra)
+library(tidyterra)
+library(rnaturalearth)
+library(geodata)
+library(sdmpredictors)
+library(marmap)
+
+#Get data
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Load in some of the map features
+rivers <- ne_load(scale = 10, type = "rivers_lake_centerlines", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+lakes <- ne_load(scale = 10, type = "lakes", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+lakes_europe <- ne_load(scale = 10, type = "lakes_europe", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+
+## IMPORT THE METADATA
+AUTUMN_Post_KMeans_Assignment_ALL_Metadata <- read.delim("/path/to/directory/Autumn_Post_KMeans_Assignment_ALL_Metadata.txt")
+
+# Convert Latitude and Longitude to numeric values
+AUTUMN_Post_KMeans_Assignment_ALL_Metadata <- AUTUMN_Post_KMeans_Assignment_ALL_Metadata %>%
+  mutate(
+    LATITUDE = as.numeric(LATITUDE),
+    LONGITUDE = as.numeric(LONGITUDE)
+)
+# Load necessary libraries
+library(dplyr)
+
+Autumn_Map <- tibble(
+  lat = c(AUTUMN_Post_KMeans_Assignment_ALL_Metadata$LATITUDE),
+  long = c(AUTUMN_Post_KMeans_Assignment_ALL_Metadata$LONGITUDE),
+  sites = c(AUTUMN_Post_KMeans_Assignment_ALL_Metadata$ID),
+  count = c(AUTUMN_Post_KMeans_Assignment_ALL_Metadata$count),
+  cluster = c(AUTUMN_Post_KMeans_Assignment_ALL_Metadata$KMeansCluster)
+)
+
+Autumn_Map$cluster <- as.factor(Autumn_Map$cluster)
+
+# AUTUMN SAMPLES
+ggplot() +
+  geom_sf(data = world, color = "black", fill = "lightgrey") +
+  geom_sf(data = lakes, fill = "#1f78b4") + 
+  geom_sf(data = lakes_europe, fill = "#1f78b4") +
+  coord_sf(xlim = c(10, 25.0), ylim = c(55.0, 67.0)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme(text = element_text(size = 10)) +
+  annotation_scale(location = "br", width_hint = 0.5, text_cex = 0.8) +
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  geom_point(
+    data = Autumn_Map,
+    aes(x = long, y = lat, size = count, color = cluster)) +
+  scale_size_continuous(range = c(1, 4)) +  # Adjust the range of point sizes
+  scale_color_manual(values = c("purple", "blue", "red", "black"))  # Adjust the colors as needed
+
+# Load the ggrepel package for better label management
+library(ggrepel)
+
+# Add a column to indicate which samples should be labeled
+Autumn_Map$label <- ifelse(Autumn_Map$sites %in% c("GAV16_AUTUMN", "VAB04_AUTUMN"), Autumn_Map$sites, NA)
+
+# AUTUMN SAMPLES with labels
+ggplot() +
+  geom_sf(data = world, color = "black", fill = "lightgrey") +
+  geom_sf(data = lakes, fill = "#1f78b4") + 
+  geom_sf(data = lakes_europe, fill = "#1f78b4") +
+  coord_sf(xlim = c(10, 25.0), ylim = c(55.0, 67.0)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme(text = element_text(size = 10)) +
+  annotation_scale(location = "br", width_hint = 0.5, text_cex = 0.8) +
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  geom_point(
+    data = Autumn_Map,
+    aes(x = long, y = lat, size = count, color = cluster)) +
+  geom_text_repel(
+    data = Autumn_Map,
+    aes(x = long, y = lat, label = label),
+    size = 3,  # Adjust label size
+    box.padding = 0.3,  # Padding around labels
+    point.padding = 0.2,  # Padding around points
+    max.overlaps = 10  # Limit label overlaps
+  ) +
+  scale_size_continuous(range = c(1, 4)) +  # Adjust the range of point sizes
+  scale_color_manual(values = c("purple", "blue", "red", "black"))  # Adjust the colors as needed
+
+## -------  End Figure S2b -------
+
+############################################################################################
+############################################################################################
+
+# ===============================
+#  Script for Figure S3 plot
+# ===============================
+
+# Load necessary libraries
+library(ggplot2)
+library(vegan)
+library(dplyr)
+library(tibble)
+library(tidyr)
+library(tidyverse)
+
+
+# Load the required datasets
+load("/path/to/directory/KMeans_Assigned_Groups_K3.RData")
+
+AUTUMN_Post_KMeans_Assignment_ALL_Metadata <- read.delim("/path/to/directory/AUTUMN_Post_KMeans_Assignment_ALL_Metadata.txt")
+
+metadata <- AUTUMN_Post_KMeans_Assignment_ALL_Metadata[, -c(1:2)]
+
+#####
+# Source the allele freqeuency data
+Upset_data <- Spring_filtered_sorted_data_ref[, -c(1:5)]
+
+rownames(Upset_data) <- Spring_filtered_sorted_data_ref$CHROM_POS
+
+# transpose the data
+Upset_data <- t(Upset_data)
+
+# Insert the row names as the first column
+Upset_data <- as.data.frame(Upset_data)
+Upset_data$Sample <- rownames(Upset_data)
+
+# Move the Sample column to the first position
+Upset_data <- Upset_data[, c(ncol(Upset_data), 1:(ncol(Upset_data) - 1))]
+
+# From the second column onwards, remove any column that doesn't follow the pattern of 1_* through 26_* 
+# Create a logical vector indicating which columns to keep  
+keep_columns <- grepl("^1_|^2_|^3_|^4_|^5_|^6_|^7_|^8_|^9_|^10_|^11_|^12_|^13_|^14_|^15_|^16_|^17_|^18_|^19_|^20_|^21_|^22_|^23_|^24_|^25_|^26_", colnames(Upset_data))
+# Subset the data frame to keep only the desired columns
+Upset_data_test <- Upset_data[, c(TRUE, keep_columns)]
+Upset_data <- Upset_data_test[, -c(4670)]
+
+ # Ensure the Sample column exists in both data frames
+Upset_data <- Upset_data %>%
+  dplyr::rename(Sample = Sample)  # Rename if necessary to ensure consistency
+
+# Merge Upset_data into AUTUMN_Post_KMeans_Assignment_ALL_Metadata by Sample
+Correlation_data <- AUTUMN_Post_KMeans_Assignment_ALL_Metadata %>%
+  left_join(Upset_data, by = "Sample")
+
+merged_data_FINAL <- Correlation_data [, c(5,4,3,6:4680)]
+
+#####
+Correlation_data <- AUTUMN_Post_KMeans_Assignment_ALL_Metadata %>%
+  left_join(
+    merged_data_FINAL %>%
+      dplyr:::select(-Count, -Season, -KMeansCluster, -SAMPLE_DATE, -LATITUDE, -LONGITUDE, -WEEK_NUM, -BOTTOM_SALINITY, -BOTTOM_TEMP),
+    by = "Sample"
+  )
+
+
+## -------  Script for Figure S3a-b -------
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Filter out samples with "AUTUMN" in the SEASON column
+filtered_data <- Correlation_data %>%
+  filter(KMeansCluster == 1) %>%
+  filter(LATITUDE <= 57)%>%
+  filter(Count >= 10) %>%
+  filter(Season != "AUTUMN")
+
+
+###
+
+# Run a PCA with all the data
+
+# Extract the numeric columns for PCA
+numeric_columns <- filtered_data[, 13:ncol(filtered_data)]
+
+# Transpose the data
+transposed_data <- numeric_columns
+rownames(transposed_data) <- filtered_data$Sample
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$Sample <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("/path/to/directory/PerLocation_Metadata.txt")
+
+# Convert the $ID columns to upper case
+#TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$Sample <- toupper(principal_components$Sample)
+
+filtered_data_TEMP <- filtered_data[, -c(1,2)]
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, filtered_data_TEMP, by = "Sample")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL$PC1,
+  PC2 = principal_components_FINAL$PC2,
+  PC3 = principal_components_FINAL$PC3,
+  PC4 = principal_components_FINAL$PC4,
+  PC5 = principal_components_FINAL$PC5,
+  Count = principal_components_FINAL$Count,
+  Season = principal_components_FINAL$Season,
+  Latitude = principal_components_FINAL$LATITUDE,
+  Week_Num = principal_components_FINAL$WEEK_NUM,
+  Sample = principal_components_FINAL$Sample
+  ) 
+
+# Filter out samples with Count < 10
+ggplot_data_filtered <- ggplot_data %>% filter(Count >= 10)
+
+# Plot using ggplot
+ggplot(ggplot_data_filtered, aes(x = -PC1, y = -PC3, color = Week_Num, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = “Week” Number,
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 1), "% variance explained)"),
+    y = paste("PC 3 (", round(100 * pca_result$sdev[3]^2 / sum(pca_result$sdev^2), 1), "% variance explained)")
+  ) +
+  scale_size_continuous(range = c(3, 8)) +  # Increase the minimum size here
+  stat_ellipse() +
+  theme_classic()
+
+# --- End of Figure S3a plotting code ---
+
+# --- Figure S3b plotting code ---
+
+
+# Define the number of alleles
+n_alleles <- ncol(filtered_data) - 12  # Adjust for metadata columns
+
+# Prepare metadata and allele frequency matrix
+metadata <- filtered_data[, c("LATITUDE", "WEEK_NUM", "BOTTOM_SALINITY", "BOTTOM_TEMP")]
+allele_freq_matrix <- filtered_data[, -(1:12)]
+
+# Function to fit linear model for each allele
+fit_model <- function(allele_col, predictor) {
+  tryCatch({
+    lm(allele_col ~ predictor)
+  }, error = function(e) {
+    NULL
+  })
+}
+
+# Fit models for all alleles
+models_latitude <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$LATITUDE)
+models_week <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$WEEK_NUM)
+models_salinity <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$BOTTOM_SALINITY)
+models_Temp <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$BOTTOM_TEMP)
+
+# Function to extract p-values and R-squared values from model summary
+extract_model_stats <- function(model, predictor_name) {
+  tryCatch({
+    summary_output <- summary(model)
+    coef_summary <- coef(summary_output)
+    r_squared <- summary_output$r.squared
+    c(
+      p_value = coef_summary[predictor_name, "Pr(>|t|)"],
+      r_squared = r_squared
+    )
+  }, error = function(e) {
+    c(p_value = NA, r_squared = NA)
+  })
+}
+
+# Extract model statistics from all models
+model_stats_latitude <- lapply(models_latitude, extract_model_stats, predictor_name = "predictor")
+model_stats_week <- lapply(models_week, extract_model_stats, predictor_name = "predictor")
+model_stats_salinity <- lapply(models_salinity, extract_model_stats, predictor_name = "predictor")
+model_stats_Temp <- lapply(models_Temp, extract_model_stats, predictor_name = "predictor")
+
+# Combine model statistics into data frames
+model_stats_latitude_df <- do.call(rbind, model_stats_latitude)
+model_stats_latitude_df <- as.data.frame(model_stats_latitude_df)
+colnames(model_stats_latitude_df) <- c("Latitude_p", "Latitude_R_squared")
+
+model_stats_week_df <- do.call(rbind, model_stats_week)
+model_stats_week_df <- as.data.frame(model_stats_week_df)
+colnames(model_stats_week_df) <- c("Week_p", "Week_R_squared")
+
+model_stats_salinity_df <- do.call(rbind, model_stats_salinity)
+model_stats_salinity_df <- as.data.frame(model_stats_salinity_df)
+colnames(model_stats_salinity_df) <- c("BottomSalinity_p", "BottomSalinity_R_squared")
+
+model_stats_Temp_df <- do.call(rbind, model_stats_Temp)
+model_stats_Temp_df <- as.data.frame(model_stats_Temp_df)
+colnames(model_stats_Temp_df) <- c("BottomTemp_p", "BottomTemp_R_squared")
+
+# Apply Benjamini-Hochberg correction for multiple comparisons
+model_stats_latitude_df$Latitude_p_adj <- p.adjust(model_stats_latitude_df$Latitude_p, method = "BH")
+model_stats_week_df$Week_p_adj <- p.adjust(model_stats_week_df$Week_p, method = "BH")
+model_stats_salinity_df$salinity_p_adj <- p.adjust(model_stats_salinity_df$BottomSalinity_p, method = "BH")
+model_stats_Temp_df$Temp_p_adj <- p.adjust(model_stats_Temp_df$BottomTemp_p, method = "BH")
+
+# Add allele identifiers
+model_stats_latitude_df$Allele <- colnames(allele_freq_matrix)
+model_stats_week_df$Allele <- colnames(allele_freq_matrix)
+model_stats_salinity_df$Allele <- colnames(allele_freq_matrix)
+model_stats_Temp_df$Allele <- colnames(allele_freq_matrix)
+
+# Define significance thresholds
+p_value_threshold <- 0.05
+rsquared_threshold <- 0.2
+
+# Subset significant results based on p-values and R-squared
+significant_latitude <- model_stats_latitude_df %>%
+  filter(Latitude_p_adj < p_value_threshold & Latitude_R_squared >= rsquared_threshold)
+significant_latitude <- significant_latitude %>%
+  dplyr::filter(abs(Latitude_R_squared - 0.5) > 1e-02)
+
+significant_week <- model_stats_week_df %>%
+  filter(Week_p_adj < p_value_threshold & Week_R_squared >= rsquared_threshold)
+significant_week <- significant_week %>%
+  dplyr::filter(abs(Week_R_squared - 0.5) > 1e-02)
+
+significant_salinity <- model_stats_salinity_df %>%
+  filter(salinity_p_adj < p_value_threshold & BottomSalinity_R_squared >= rsquared_threshold)
+  
+significant_Temp <- model_stats_Temp_df %>%
+  filter(Temp_p_adj < p_value_threshold & BottomTemp_R_squared >= rsquared_threshold)
+
+# Remove the "X" prefix from the Allele column in all significant_* datasets
+significant_latitude$Allele <- sub("^X", "", significant_latitude$Allele)
+significant_week$Allele <- sub("^X", "", significant_week$Allele)
+significant_salinity$Allele <- sub("^X", "", significant_salinity$Allele)
+significant_Temp$Allele <- sub("^X", "", significant_Temp$Allele)
+
+
+# Annotat the significant latitude SNPs with the gene names
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Create a new column for CHROM and POS in the significant_week data but keep the original Allele column
+significant_week <- significant_week %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", convert = TRUE, remove = FALSE) 
+
+# Load SNP data
+SpringOutl_anno <- significant_week[, c(5, 6)]
+
+
+# Convert CHROM and POS to numeric
+SpringOutl_anno$CHR <- as.numeric(SpringOutl_anno$CHROM)
+SpringOutl_anno$POS <- as.numeric(SpringOutl_anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = SpringOutl_anno$CHR,
+                  ranges = IRanges(start = SpringOutl_anno$POS, end = SpringOutl_anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(SpringOutl_anno$CHR)
+
+chr_annotations <- subset(cluhar_v2.0.2_gtf, seqnames(cluhar_v2.0.2_gtf) %in% c("1", "10", "11", "12", "15", "16", "17", "18", "23", "4", "5"))
+gtf_GR <- as(chr_annotations, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates based on unique combinations of SNP_Chr and SNP_Pos
+snp_annotations_genes <- snp_annotations_genes %>%
+  distinct(SNP_Chr, SNP_Pos, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes)
+
+snp_annotations_genes <- snp_annotations_genes %>%
+  dplyr::mutate(Gene_Name = ifelse(Gene_Name == "", Gene_ID, Gene_Name))
+
+# View results
+View(snp_annotations_genes)
+
+###
+
+# Create a new column CHROM_POS in snp_annotations_genes
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+snp_annotations_genes$SNP_Chr <- as.character(snp_annotations_genes$SNP_Chr)
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+# Identify matching columns in Correlation_data
+matching_columns <- intersect(colnames(Correlation_data), snp_annotations_genes$CHROM_POS)
+
+# Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
+filt_TEMP_data <- Correlation_data[, c(3:10)]
+filtered_data2 <- Correlation_data[, c(matching_columns)]
+
+# Combine filtered_data and filtered_data2 into a single dataset
+final_filtered_data <- cbind(filt_TEMP_data, filtered_data2)
+
+# View the structure of the combined dataset
+str(final_filtered_data)
+
+###
+
+# Identify allele frequency columns (columns 9 onwards)
+allele_columns <- colnames(final_filtered_data)[9:ncol(final_filtered_data)]
+
+# Polarize the allele frequency data
+for (col in allele_columns) {
+  # Calculate the mean allele frequency for the column
+  mean_freq <- mean(final_filtered_data[[col]], na.rm = TRUE)
+  
+  # If the mean is less than 0.5, apply the transformation
+  if (mean_freq < 0.5) {
+    final_filtered_data[[col]] <- abs(1 - final_filtered_data[[col]])
+  }
+}
+
+###
+
+# Chromosome inversion regions
+chromosome_inversion_regions <- list(
+  "6" = c(22282765, 24868581),
+  "12" = c(17826318, 25603093),
+  "17" = c(25805445, 27568511),
+  "23" = c(16226443, 17604273)
+)
+
+# Plot the data without a legend
+ggplot(data_long_Filt_KMeans_2, aes(x = WEEK_NUM, y = Frequency, group = SNP_Factor, color = SNP_Factor)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Polarized Allele Frequencies Across Week “Number,
+    x = "Week Number”,
+    y = "Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "right")  # Remove the legend
+
+###
+
+# Create a mapping of SNP to Gene_Name
+# Use base R to dplyr::select columns and create the SNP column
+snp_to_gene_mapping <- snp_annotations_genes[, c("SNP_Chr", "SNP_Pos", "Gene_Name")]
+snp_to_gene_mapping$SNP <- paste(snp_to_gene_mapping$SNP_Chr, snp_to_gene_mapping$SNP_Pos, sep = "_")
+
+# Reshape final_filtered_data into long format for annotation
+final_filtered_data_2 <- final_filtered_data %>%
+  filter(KMeansCluster == 1)%>%
+  filter(Count >= 10)%>%
+  filter(WEEK_NUM >= 27)
+
+
+# Use pivot_longer equivalent in base R
+data_long <- reshape(
+  final_filtered_data_2,
+  varying = list(names(final_filtered_data_2)[9:ncol(final_filtered_data_2)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data_2)[9:ncol(final_filtered_data_2)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Gene_Name using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Gene_Name
+# Use aggregate to group by Sample and Gene_Name and calculate the mean Frequency
+final_filtered_data_gene_averages <- aggregate(
+  Frequency ~ Sample + Gene_Name,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+# Use reshape to pivot the data back to wide format
+final_filtered_data_gene_averages_wide <- reshape(
+  final_filtered_data_gene_averages,
+  timevar = "Gene_Name",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_gene_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_gene_averages_wide))
+
+# View the structure of the new dataset
+str(final_filtered_data_gene_averages_wide)
+
+# Plotting the data 
+
+# Add LATITUDE to the wide dataset
+# Merge LATITUDE from the original final_filtered_data into final_filtered_data_gene_averages_wide
+final_filtered_data_gene_averages_wide <- merge(
+  final_filtered_data_gene_averages_wide,
+  final_filtered_data[, c("Sample", "LATITUDE")],  # Extract Sample and LATITUDE columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_gene <- reshape(
+  final_filtered_data_gene_averages_wide,
+  varying = list(names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))]),  # Exclude "Sample" and "LATITUDE"
+  v.names = "Frequency",
+  timevar = "Gene_Name",
+  times = names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Gene_Name column is treated as a factor
+data_long_gene$Gene_Name <- as.factor(data_long_gene$Gene_Name)
+
+# Remove Gene_Name values that contain "ENSCHAG"
+data_long_gene_TEST <- data_long_gene %>%
+  filter(!Gene_Name %in% c("igf2bp1")) %>%
+  dplyr::filter(!grepl("ENSCHAG", as.character(Gene_Name)))
+
+
+# Plot the data
+library(ggplot2)
+
+ggplot(data_long_gene_TEST, aes(x = LATITUDE, y = Frequency, group = Gene_Name, color = Gene_Name)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across Latitude by Gene",
+    x = "Latitude",
+    y = "Averaged Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "right")  # Remove the legend
+
+### ---- End of Figure S3b plotting code ----
+
+
+### ---- Start Figure S3 c-d ----
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Filter out samples with "AUTUMN" in the SEASON column
+filtered_data <- Correlation_data %>%
+  filter(Season != "AUTUMN") %>%
+  filter(KMeansCluster == 2) %>%
+  filter(Count >= 10)%>%
+  filter(LATITUDE >= 57)%>%
+  filter(LATITUDE <= 64)
+
+# PART 2: Run a PCA with all the data
+
+# Extract the numeric columns for PCA
+numeric_columns <- filtered_data[, 13:ncol(filtered_data)]
+
+# Transpose the data
+transposed_data <- numeric_columns
+rownames(transposed_data) <- filtered_data$Sample
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$Sample <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("/path/to/directory//PerLocation_Metadata.txt")
+
+# Convert the $ID columns to upper case
+#TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$Sample <- toupper(principal_components$Sample)
+
+filtered_data_TEMP <- filtered_data[, -c(1,2)]
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, filtered_data_TEMP, by = "Sample")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL$PC1,
+  PC2 = principal_components_FINAL$PC2,
+  PC3 = principal_components_FINAL$PC3,
+  PC4 = principal_components_FINAL$PC4,
+  PC5 = principal_components_FINAL$PC5,
+  Count = principal_components_FINAL$Count,
+  Season = principal_components_FINAL$Season,
+  Latitude = principal_components_FINAL$LATITUDE,
+  Week_Num = principal_components_FINAL$WEEK_NUM,
+  Sample = principal_components_FINAL$Sample
+  ) 
+
+# Filter out samples with Count < 5
+ggplot_data_filtered <- ggplot_data %>% filter(Count >= 10)
+
+# Create a new column to indicate whether the sample should be labeled
+#ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("KAL05_SPRING", "KAL6_SPRING", "KAL05_AUTUMN", "KAL6_AUTUMN"), ggplot_data$Sample, NA)
+
+# Plot using ggplot
+ggplot(ggplot_data_filtered, aes(x = -PC1, y = -PC2, color = Latitude, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Latitude",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  #scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+# --- End of Figure S3c plotting code ---
+
+# Define the number of alleles
+n_alleles <- ncol(filtered_data) - 12  # Adjust for metadata columns
+# 4668 SNP for correlation analysis
+
+# Prepare metadata and allele frequency matrix
+metadata <- filtered_data[, c("LATITUDE", "WEEK_NUM", "BOTTOM_SALINITY", "BOTTOM_TEMP")]
+allele_freq_matrix <- filtered_data[, -(1:12)]
+
+# Function to fit linear model for each allele
+fit_model <- function(allele_col, predictor) {
+  tryCatch({
+    lm(allele_col ~ predictor)
+  }, error = function(e) {
+    NULL
+  })
+}
+
+# Fit models for all alleles
+models_latitude <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$LATITUDE)
+models_week <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$WEEK_NUM)
+models_salinity <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$BOTTOM_SALINITY)
+models_Temp <- apply(allele_freq_matrix, 2, fit_model, predictor = metadata$BOTTOM_TEMP)
+
+# Function to extract p-values and R-squared values from model summary
+extract_model_stats <- function(model, predictor_name) {
+  tryCatch({
+    summary_output <- summary(model)
+    coef_summary <- coef(summary_output)
+    r_squared <- summary_output$r.squared
+    c(
+      p_value = coef_summary[predictor_name, "Pr(>|t|)"],
+      r_squared = r_squared
+    )
+  }, error = function(e) {
+    c(p_value = NA, r_squared = NA)
+  })
+}
+
+# Extract model statistics from all models
+model_stats_latitude <- lapply(models_latitude, extract_model_stats, predictor_name = "predictor")
+model_stats_week <- lapply(models_week, extract_model_stats, predictor_name = "predictor")
+model_stats_salinity <- lapply(models_salinity, extract_model_stats, predictor_name = "predictor")
+model_stats_Temp <- lapply(models_Temp, extract_model_stats, predictor_name = "predictor")
+
+# Combine model statistics into data frames
+model_stats_latitude_df <- do.call(rbind, model_stats_latitude)
+model_stats_latitude_df <- as.data.frame(model_stats_latitude_df)
+colnames(model_stats_latitude_df) <- c("Latitude_p", "Latitude_R_squared")
+
+model_stats_week_df <- do.call(rbind, model_stats_week)
+model_stats_week_df <- as.data.frame(model_stats_week_df)
+colnames(model_stats_week_df) <- c("Week_p", "Week_R_squared")
+
+model_stats_salinity_df <- do.call(rbind, model_stats_salinity)
+model_stats_salinity_df <- as.data.frame(model_stats_salinity_df)
+colnames(model_stats_salinity_df) <- c("BottomSalinity_p", "BottomSalinity_R_squared")
+
+model_stats_Temp_df <- do.call(rbind, model_stats_Temp)
+model_stats_Temp_df <- as.data.frame(model_stats_Temp_df)
+colnames(model_stats_Temp_df) <- c("BottomTemp_p", "BottomTemp_R_squared")
+
+# Apply Benjamini-Hochberg correction for multiple comparisons
+model_stats_latitude_df$Latitude_p_adj <- p.adjust(model_stats_latitude_df$Latitude_p, method = "BH")
+model_stats_week_df$Week_p_adj <- p.adjust(model_stats_week_df$Week_p, method = "BH")
+model_stats_salinity_df$salinity_p_adj <- p.adjust(model_stats_salinity_df$BottomSalinity_p, method = "BH")
+model_stats_Temp_df$Temp_p_adj <- p.adjust(model_stats_Temp_df$BottomTemp_p, method = "BH")
+
+# Add allele identifiers
+model_stats_latitude_df$Allele <- colnames(allele_freq_matrix)
+model_stats_week_df$Allele <- colnames(allele_freq_matrix)
+model_stats_salinity_df$Allele <- colnames(allele_freq_matrix)
+model_stats_Temp_df$Allele <- colnames(allele_freq_matrix)
+
+# Define significance thresholds
+p_value_threshold <- 0.05
+rsquared_threshold <- 0.2
+
+# Subset significant results based on p-values and R-squared
+significant_latitude <- model_stats_latitude_df %>%
+  filter(Latitude_p_adj < p_value_threshold & Latitude_R_squared >= rsquared_threshold)
+significant_latitude <- significant_latitude %>%
+  dplyr::filter(abs(Latitude_R_squared - 0.5) > 1e-02)
+
+significant_week <- model_stats_week_df %>%
+  filter(Week_p_adj < p_value_threshold & Week_R_squared >= rsquared_threshold)
+significant_week <- significant_week %>%
+  dplyr::filter(abs(Week_R_squared - 0.5) > 1e-02)
+
+significant_salinity <- model_stats_salinity_df %>%
+  filter(salinity_p_adj < p_value_threshold & BottomSalinity_R_squared >= rsquared_threshold)
+  
+significant_Temp <- model_stats_Temp_df %>%
+  filter(Temp_p_adj < p_value_threshold & BottomTemp_R_squared >= rsquared_threshold)
+
+# Remove the "X" prefix from the Allele column in all significant_* datasets
+significant_latitude$Allele <- sub("^X", "", significant_latitude$Allele)
+significant_week$Allele <- sub("^X", "", significant_week$Allele)
+significant_salinity$Allele <- sub("^X", "", significant_salinity$Allele)
+significant_Temp$Allele <- sub("^X", "", significant_Temp$Allele)
+
+# Annotat the significant latitude SNPs with the gene names
+
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Create a new column for CHROM and POS in the significant_latitude data but keep the original Allele column
+significant_latitude <- significant_latitude %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", convert = TRUE, remove = FALSE) 
+
+# Load SNP data
+SpringOutl_anno <- significant_latitude[, c(5, 6)]
+
+
+# Convert CHROM and POS to numeric
+SpringOutl_anno$CHR <- as.numeric(SpringOutl_anno$CHROM)
+SpringOutl_anno$POS <- as.numeric(SpringOutl_anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = SpringOutl_anno$CHR,
+                  ranges = IRanges(start = SpringOutl_anno$POS, end = SpringOutl_anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(SpringOutl_anno$CHR)
+
+chr_annotations <- subset(cluhar_v2.0.2_gtf, seqnames(cluhar_v2.0.2_gtf) %in% c("1", "10", "11", "12", "15", "16", "17", "18", "23", "4", "5"))
+gtf_GR <- as(chr_annotations, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates based on unique combinations of SNP_Chr and SNP_Pos
+snp_annotations_genes <- snp_annotations_genes %>%
+  distinct(SNP_Chr, SNP_Pos, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes)
+
+snp_annotations_genes <- snp_annotations_genes %>%
+  dplyr::mutate(Gene_Name = ifelse(Gene_Name == "", Gene_ID, Gene_Name))
+
+# View results
+View(snp_annotations_genes)
+
+###
+
+# Create a new column CHROM_POS in snp_annotations_genes
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+snp_annotations_genes$SNP_Chr <- as.character(snp_annotations_genes$SNP_Chr)
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+# Identify matching columns in Correlation_data
+matching_columns <- intersect(colnames(Correlation_data), snp_annotations_genes$CHROM_POS)
+
+# Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
+filt_TEMP_data <- Correlation_data[, c(3:10)]
+filtered_data2 <- Correlation_data[, c(matching_columns)]
+
+# Combine filtered_data and filtered_data2 into a single dataset
+final_filtered_data <- cbind(filt_TEMP_data, filtered_data2)
+
+# View the structure of the combined dataset
+str(final_filtered_data)
+
+###
+
+# Identify allele frequency columns (columns 9 onwards)
+allele_columns <- colnames(final_filtered_data)[9:ncol(final_filtered_data)]
+
+# Polarize the allele frequency data
+for (col in allele_columns) {
+  # Calculate the mean allele frequency for the column
+  mean_freq <- mean(final_filtered_data[[col]], na.rm = TRUE)
+  
+  # If the mean is less than 0.5, apply the transformation
+  if (mean_freq < 0.5) {
+    final_filtered_data[[col]] <- abs(1 - final_filtered_data[[col]])
+  }
+}
+
+###
+
+# Chromosome inversion regions
+chromosome_inversion_regions <- list(
+  "6" = c(22282765, 24868581),
+  "12" = c(17826318, 25603093),
+  "17" = c(25805445, 27568511),
+  "23" = c(16226443, 17604273)
+)
+
+# Plot the data without a legend
+ggplot(data_long_Filt_KMeans_2, aes(x = LATITUDE, y = Frequency, group = SNP_Factor, color = SNP_Factor)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Polarized Allele Frequencies Across Latitude",
+    x = "Latitude",
+    y = "Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "right")  # Remove the legend
+
+###
+
+# Create a mapping of SNP to Gene_Name
+# Use base R to dplyr::select columns and create the SNP column
+snp_to_gene_mapping <- snp_annotations_genes[, c("SNP_Chr", "SNP_Pos", "Gene_Name")]
+snp_to_gene_mapping$SNP <- paste(snp_to_gene_mapping$SNP_Chr, snp_to_gene_mapping$SNP_Pos, sep = "_")
+
+# Reshape final_filtered_data into long format for annotation
+final_filtered_data_2 <- final_filtered_data %>%
+  filter(KMeansCluster == 2)%>%
+  filter(Count >= 10)%>%
+  filter(LATITUDE >= 57)%>%
+  filter(LATITUDE <= 64)
+
+# Use pivot_longer equivalent in base R
+data_long <- reshape(
+  final_filtered_data_2,
+  varying = list(names(final_filtered_data_2)[9:ncol(final_filtered_data_2)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data_2)[9:ncol(final_filtered_data_2)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Gene_Name using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Gene_Name
+# Use aggregate to group by Sample and Gene_Name and calculate the mean Frequency
+final_filtered_data_gene_averages <- aggregate(
+  Frequency ~ Sample + Gene_Name,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+# Use reshape to pivot the data back to wide format
+final_filtered_data_gene_averages_wide <- reshape(
+  final_filtered_data_gene_averages,
+  timevar = "Gene_Name",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_gene_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_gene_averages_wide))
+
+# View the structure of the new dataset
+str(final_filtered_data_gene_averages_wide)
+
+# Plotting the data 
+
+# Add LATITUDE to the wide dataset
+# Merge LATITUDE from the original final_filtered_data into final_filtered_data_gene_averages_wide
+final_filtered_data_gene_averages_wide <- merge(
+  final_filtered_data_gene_averages_wide,
+  final_filtered_data[, c("Sample", "LATITUDE")],  # Extract Sample and LATITUDE columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_gene <- reshape(
+  final_filtered_data_gene_averages_wide,
+  varying = list(names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))]),  # Exclude "Sample" and "LATITUDE"
+  v.names = "Frequency",
+  timevar = "Gene_Name",
+  times = names(final_filtered_data_gene_averages_wide)[-c(1, ncol(final_filtered_data_gene_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Gene_Name column is treated as a factor
+data_long_gene$Gene_Name <- as.factor(data_long_gene$Gene_Name)
+
+# Remove Gene_Name values that contain "ENSCHAG"
+data_long_gene_TEST <- data_long_gene %>%
+  filter(!Gene_Name %in% c("igf2bp1")) %>%
+  dplyr::filter(!grepl("ENSCHAG", as.character(Gene_Name)))
+
+
+# Plot the data
+library(ggplot2)
+
+ggplot(data_long_gene_TEST, aes(x = LATITUDE, y = Frequency, group = Gene_Name, color = Gene_Name)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across Latitude by Gene",
+    x = "Latitude",
+    y = "Averaged Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "right")  # Remove the legend
+
+### ---- End of Figure S3d plotting code ----
+
+
+### ---- Start Figure S3e ----
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+
+# Filter out samples with "AUTUMN" in the SEASON column
+filtered_data <- Correlation_data %>%
+  filter(Season != "AUTUMN") %>%
+  filter(KMeansCluster == 3) %>%
+  filter(Count >= 10)%>%
+  filter(LATITUDE >= 62)
+
+# Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- filtered_data[, 13:ncol(filtered_data)]
+
+# Transpose the data
+transposed_data <- numeric_columns
+rownames(transposed_data) <- filtered_data$Sample
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$Sample <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("/path/to/directory/PerLocation_Metadata.txt")
+
+# Convert the $ID columns to upper case
+#TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$Sample <- toupper(principal_components$Sample)
+
+filtered_data_TEMP <- filtered_data[, -c(1,2)]
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, filtered_data_TEMP, by = "Sample")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL$PC1,
+  PC2 = principal_components_FINAL$PC2,
+  PC3 = principal_components_FINAL$PC3,
+  PC4 = principal_components_FINAL$PC4,
+  PC5 = principal_components_FINAL$PC5,
+  Count = principal_components_FINAL$Count,
+  Season = principal_components_FINAL$Season,
+  Latitude = principal_components_FINAL$LATITUDE,
+  Week_Num = principal_components_FINAL$WEEK_NUM,
+  Sample = principal_components_FINAL$Sample
+  ) 
+
+# Filter out samples with Count < 5
+ggplot_data_filtered <- ggplot_data %>% filter(Count >= 10)
+
+# Plot using ggplot
+ggplot(ggplot_data_filtered, aes(x = -PC1, y = -PC3, color = Latitude, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Latitude",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 1), "% variance explained)"),
+    y = paste("PC 3 (", round(100 * pca_result$sdev[3]^2 / sum(pca_result$sdev^2), 1), "% variance explained)")
+  ) +
+  scale_size_continuous(range = c(3, 8)) +  # Increase the minimum size here
+  stat_ellipse() +
+  theme_classic()
+
+# --- End of Figure S3e plotting code ---
+
+
+############################################################################################
+############################################################################################
+
+# ===============================
+#  Script for Figure S4 plot
+# ===============================
+
+### The following details the analysis of the correlations for Salinty and SStemp which were sourced from CapericusMarine database
+setwd("/path/to/directory/")
+
+load("~/path/to/directory/Calculated_Correlations_For_Upset.RData")
+
+# Load necessary libraries
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+
+#################
+#################
+
+# Data set that I need for all the SNP on a chromosome = model_stats_week_df
+# List of only significant SNPs = significant_week
+
+# Add CHROM and POS columns to the significant_week dataset
+model_stats_week_df$Allele <- sub("^X", "", model_stats_week_df$Allele)
+
+model_stats_week_df <- model_stats_week_df %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+# Add CHROM and POS columns to the significant_week dataset
+significant_week <- significant_week %>%
+  separate(Allele, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(CHROM = as.numeric(CHROM),
+         POS = as.numeric(POS))
+
+####
+
+# Annotat the significant week SNPs with the gene names
+
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Load SNP data
+SpringOutl_anno <- significant_week[, c(5, 6)]
+
+# Convert CHROM and POS to numeric
+SpringOutl_anno$CHR <- as.numeric(SpringOutl_anno$CHROM)
+SpringOutl_anno$POS <- as.numeric(SpringOutl_anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = SpringOutl_anno$CHR,
+                  ranges = IRanges(start = SpringOutl_anno$POS, end = SpringOutl_anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(SpringOutl_anno$CHR)
+
+chr_annotations <- subset(cluhar_v2.0.2_gtf, seqnames(cluhar_v2.0.2_gtf) %in% c("1", "10", "11", "12", "15", "16", "17", "18", "23", "4", "5"))
+gtf_GR <- as(chr_annotations, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Create the new rows as a data frame
+new_rows <- data.frame(
+  SNP_Chr = factor(c("19", "19"), levels = levels(snp_annotations$SNP_Chr)),
+  SNP_Pos = c(20608343, 20610035),
+  Feature_Type = factor(c("gene", "gene"), levels = levels(snp_annotations$Feature_Type)),
+  Gene_ID = c("ENSCHAG00020012530", "ENSCHAG00020012530")
+)
+
+# Append the new rows to snp_annotations
+snp_annotations <- rbind(snp_annotations, new_rows)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates based on unique combinations of SNP_Chr and SNP_Pos
+snp_annotations_genes <- snp_annotations_genes %>%
+  distinct(SNP_Chr, SNP_Pos, .keep_all = TRUE)
+
+# View results
+View(snp_annotations_genes)
+
+###
+
+# Now we want to visualise the allele frequencies of the significant SNPs across WEEK_NUM
+
+ # Create a new column CHROM_POS in snp_annotations_genes
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+snp_annotations_genes$SNP_Chr <- as.character(snp_annotations_genes$SNP_Chr)
+snp_annotations_genes$CHROM_POS <- paste(snp_annotations_genes$SNP_Chr, snp_annotations_genes$SNP_Pos, sep = "_")
+
+# Identify matching columns in Correlation_data
+matching_columns <- intersect(colnames(Correlation_data), snp_annotations_genes$CHROM_POS)
+
+# Filter Correlation_data to include columns 3:10 and the matching CHROM_POS columns
+filtered_data <- Correlation_data[, c(3:12)]
+filtered_data2 <- Correlation_data[, c(matching_columns)]
+
+# Combine filtered_data and filtered_data2 into a single dataset
+final_filtered_data <- cbind(filtered_data, filtered_data2)
+
+# View the structure of the combined dataset
+str(final_filtered_data)
+
+###
+
+# Identify allele frequency columns (columns 9 onwards)
+allele_columns <- colnames(final_filtered_data)[11:ncol(final_filtered_data)]
+
+# Polarize the allele frequency data
+for (col in allele_columns) {
+  # Calculate the mean allele frequency for the column
+  mean_freq <- mean(final_filtered_data[[col]], na.rm = TRUE)
+  
+  # If the mean is less than 0.5, apply the transformation
+  if (mean_freq < 0.5) {
+    final_filtered_data[[col]] <- abs(1 - final_filtered_data[[col]])
+  }
+}
+
+###
+
+# Extract CHROM and POS from SNP names
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Extract CHROM and POS from SNP names and sort by CHROM and POS
+
+# Define the threshold
+missing_data_threshold <- 0.2 
+
+# Split the dataset: first 10 columns and the rest
+first_part <- final_filtered_data[, 1:10]
+second_part <- final_filtered_data[, 11:ncol(final_filtered_data)]
+
+# Filter second part based on missing data threshold
+filtered_second_part <- second_part[, colMeans(is.na(second_part)) < missing_data_threshold]
+
+# Combine back
+final_filtered_data_TEST <- cbind(first_part, filtered_second_part)
+
+data_long <- final_filtered_data_TEST %>%
+  pivot_longer(
+    cols = 11:ncol(final_filtered_data_TEST),  # Columns 11 onwards are allele frequencies
+    names_to = "SNP",                   # Create a column for SNP names
+    values_to = "Frequency"             # Create a column for allele frequencies
+  ) %>%
+  separate(SNP, into = c("CHROM", "POS"), sep = "_", convert = TRUE) %>%  # Split SNP into CHROM and POS
+  arrange(CHROM, POS)  # Sort by CHROM and POS
+
+# Create a new factor column for SNPs ordered by CHROM and POS
+data_long <- data_long %>%
+  mutate(SNP_Factor = factor(interaction(CHROM, POS), levels = unique(interaction(CHROM, POS))))
+
+# Ensure Sample is ordered by WEEK_NUM within reversed KMeansCluster order
+data_long <- data_long %>%
+  mutate(KMeansCluster = factor(KMeansCluster, levels = rev(sort(unique(KMeansCluster)))),  # Reverse KMeansCluster order
+         Sample = factor(Sample, levels = unique(Sample[order(KMeansCluster, WEEK_NUM)])))  # Order Sample by reversed KMeansCluster and WEEK_NUM
+
+###
+
+# Generate plot of allele frequencies across WEEK_NUM
+
+# Chromosome inversion regions
+chromosome_inversion_regions <- list(
+  "6" = c(22282765, 24868581),
+  "12" = c(17826318, 25603093),
+  "17" = c(25805445, 27568511),
+  "23" = c(16226443, 17604273)
+)
+
+
+# Reshape the data into a long format for plotting
+data_long <- final_filtered_data_TEST %>%
+  pivot_longer(
+    cols = 11:ncol(final_filtered_data_TEST),  # Columns 9 onwards are allele frequencies
+    names_to = "SNP",                   # Create a column for SNP names
+    values_to = "Frequency"             # Create a column for allele frequencies
+  )
+
+# Plot the data without a legend
+ggplot(data_long, aes(x = WEEK_NUM, y = Frequency, group = SNP, color = SNP)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Polarized Allele Frequencies Across WEEK_NUM",
+    x = "WEEK_NUM",
+    y = "Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")  # Remove the legend
+
+####
+
+# Create a mapping of SNP to Gene_Name
+# Use base R to select columns and create the SNP column
+snp_to_gene_mapping <- snp_annotations_genes[, c("SNP_Chr", "SNP_Pos", "Gene_Name")]
+snp_to_gene_mapping$SNP <- paste(snp_to_gene_mapping$SNP_Chr, snp_to_gene_mapping$SNP_Pos, sep = "_")
+
+# Reshape final_filtered_data_TEST into long format for annotation
+# Use pivot_longer equivalent in base R
+data_long <- reshape(
+  final_filtered_data_TEST,
+  varying = list(names(final_filtered_data_TEST)[9:ncol(final_filtered_data_TEST)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data_TEST)[9:ncol(final_filtered_data_TEST)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Gene_Name using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Gene_Name
+# Use aggregate to group by Sample and Gene_Name and calculate the mean Frequency
+final_filtered_data_TEST_gene_averages <- aggregate(
+  Frequency ~ Sample + Gene_Name,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+# Use reshape to pivot the data back to wide format
+final_filtered_data_TEST_gene_averages_wide <- reshape(
+  final_filtered_data_TEST_gene_averages,
+  timevar = "Gene_Name",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_TEST_gene_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_TEST_gene_averages_wide))
+
+# View the structure of the new dataset
+str(final_filtered_data_TEST_gene_averages_wide)
+
+# Plotting the data 
+# Add WEEK_NUM to the wide dataset
+# Merge WEEK_NUM from the original final_filtered_data_TEST into final_filtered_data_TEST_gene_averages_wide
+final_filtered_data_TEST_gene_averages_wide <- merge(
+  final_filtered_data_TEST_gene_averages_wide,
+  final_filtered_data_TEST[, c("Sample", "WEEK_NUM")],  # Extract Sample and WEEK_NUM columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_gene <- reshape(
+  final_filtered_data_TEST_gene_averages_wide,
+  varying = list(names(final_filtered_data_TEST_gene_averages_wide)[-c(1, ncol(final_filtered_data_TEST_gene_averages_wide))]),  # Exclude "Sample" and "WEEK_NUM"
+  v.names = "Frequency",
+  timevar = "Gene_Name",
+  times = names(final_filtered_data_TEST_gene_averages_wide)[-c(1, ncol(final_filtered_data_TEST_gene_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Gene_Name column is treated as a factor
+data_long_gene$Gene_Name <- as.factor(data_long_gene$Gene_Name)
+
+# Plot the data
+library(ggplot2)
+
+ggplot(data_long_gene, aes(x = WEEK_NUM, y = Frequency, group = Gene_Name, color = Gene_Name)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across WEEK_NUM by Gene",
+    x = "WEEK_NUM",
+    y = "Averaged Allele Frequency"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none")  # Remove the legend
+
+
+###
+
+# Annotate genes with inversion regions
+# Add a column to indicate whether a gene is in an inversion region
+snp_to_gene_mapping$Region <- snp_to_gene_mapping$Gene_Name  # Default to Gene_Name
+
+for (chrom in names(chromosome_inversion_regions)) {
+  inversion_start <- chromosome_inversion_regions[[chrom]][1]
+  inversion_end <- chromosome_inversion_regions[[chrom]][2]
+  
+  # Assign genes within the inversion region to the inversion label
+  snp_to_gene_mapping$Region[
+    snp_to_gene_mapping$SNP_Chr == chrom &
+    snp_to_gene_mapping$SNP_Pos >= inversion_start &
+    snp_to_gene_mapping$SNP_Pos <= inversion_end
+  ] <- paste0("Chr", chrom, "_Inversion")
+}
+
+# Reshape final_filtered_data_TEST into long format for annotation
+data_long <- reshape(
+  final_filtered_data_TEST,
+  varying = list(names(final_filtered_data_TEST)[9:ncol(final_filtered_data_TEST)]),  # Columns 9 onwards
+  v.names = "Frequency",
+  timevar = "SNP",
+  times = names(final_filtered_data_TEST)[9:ncol(final_filtered_data_TEST)],
+  direction = "long"
+)
+data_long$SNP <- as.character(data_long$SNP)  # Ensure SNP is a character column
+
+# Annotate with Region using base R merge
+data_long_annotated <- merge(data_long, snp_to_gene_mapping, by = "SNP", all.x = TRUE)
+
+# Average allele frequencies by Region
+# Use aggregate to group by Sample and Region and calculate the mean Frequency
+final_filtered_data_TEST_region_averages <- aggregate(
+  Frequency ~ Sample + Region,
+  data = data_long_annotated,
+  FUN = function(x) mean(x, na.rm = TRUE)
+)
+
+# Reshape back into wide format
+final_filtered_data_TEST_region_averages_wide <- reshape(
+  final_filtered_data_TEST_region_averages,
+  timevar = "Region",
+  idvar = "Sample",
+  direction = "wide"
+)
+
+# Rename columns to remove "Frequency." prefix
+colnames(final_filtered_data_TEST_region_averages_wide) <- sub("Frequency\\.", "", colnames(final_filtered_data_TEST_region_averages_wide))
+
+# Add WEEK_NUM to the wide dataset
+final_filtered_data_TEST_region_averages_wide <- merge(
+  final_filtered_data_TEST_region_averages_wide,
+  final_filtered_data_TEST[, c("Sample", "WEEK_NUM")],  # Extract Sample and WEEK_NUM columns
+  by = "Sample"
+)
+
+# Reshape the data into a long format for plotting
+data_long_region <- reshape(
+  final_filtered_data_TEST_region_averages_wide,
+  varying = list(names(final_filtered_data_TEST_region_averages_wide)[-c(1,2, ncol(final_filtered_data_TEST_region_averages_wide))]),  # Exclude "Sample" and "WEEK_NUM"
+  v.names = "Frequency",
+  timevar = "Region",
+  times = names(final_filtered_data_TEST_region_averages_wide)[-c(1,2, ncol(final_filtered_data_TEST_region_averages_wide))],
+  direction = "long"
+)
+
+# Ensure the Region column is treated as a factor
+data_long_region$Region <- as.factor(data_long_region$Region)
+
+# Plot the data
+library(ggplot2)
+
+# Plot the data with smoothed lines for each region
+ggplot(data_long_region, aes(x = WEEK_NUM, y = Frequency, group = Region, color = Region)) +
+  geom_smooth(method = "loess", se = FALSE) +  # Add smoothed lines
+  scale_y_continuous(limits = c(0.5, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across WEEK_NUM by Region",
+    x = "WEEK_NUM",
+    y = "Averaged Allele Frequency",
+    color = "Region"  # Add a label for the legend
+  ) +
+  theme_classic()
+
+
+### ---- SOUTH ONLY ----
+# Extract sample names from South
+samples_cluster1 <- unique(data_long_annotated$Sample[data_long_annotated$KMeansCluster == 1])
+
+# Filter data_long_region to only include those samples
+data_region_cluster1 <- data_long_region[data_long_region$Sample %in% samples_cluster1, ]
+
+# Plot the data with smoothed lines for each region
+ggplot(data_region_cluster1, aes(x = WEEK_NUM, y = Frequency, group = Region, color = Region)) +
+  geom_smooth(method = "lm", se = FALSE) +  # Use linear model instead of loess
+  scale_y_continuous(limits = c(0.5, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across WEEK_NUM by Region",
+    x = "WEEK_NUM",
+    y = "Averaged Allele Frequency",
+    color = "Region"  # Add a label for the legend
+  ) +
+  theme_classic()
+
+### ---- CENTRAL ONLY ----
+# Extract sample names from Central
+samples_cluster2 <- unique(data_long_annotated$Sample[data_long_annotated$KMeansCluster == 2])
+
+# Filter data_long_region to only include those samples
+data_region_cluster2 <- data_long_region[data_long_region$Sample %in% samples_cluster2, ]
+
+# Plot the data with smoothed lines for each region
+ggplot(data_region_cluster2, aes(x = WEEK_NUM, y = Frequency, group = Region, color = Region)) +
+  geom_smooth(method = "lm", se = FALSE) +  # Use linear model instead of loess
+  scale_y_continuous(limits = c(0.5, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across WEEK_NUM by Region",
+    x = "WEEK_NUM",
+    y = "Averaged Allele Frequency",
+    color = "Region"  # Add a label for the legend
+  ) +
+  theme_classic()
+
+### ---- NORTH ONLY ----
+# Extract sample names from North
+samples_cluster3 <- unique(data_long_annotated$Sample[data_long_annotated$KMeansCluster == 3])
+
+# Filter data_long_region to only include those samples
+data_region_cluster3 <- data_long_region[data_long_region$Sample %in% samples_cluster3, ]
+
+# Plot the data with smoothed lines for each region
+ggplot(data_region_cluster3, aes(x = WEEK_NUM, y = Frequency, group = Region, color = Region)) +
+  geom_smooth(method = "lm", se = FALSE) +  # Use linear model instead of loess
+  scale_y_continuous(limits = c(0.5, 1)) +       # Set y-axis limits for allele frequencies
+  labs(
+    title = "Averaged Allele Frequencies Across WEEK_NUM by Region",
+    x = "WEEK_NUM",
+    y = "Averaged Allele Frequency",
+    color = "Region"  # Add a label for the legend
+  ) +
+  theme_classic()
