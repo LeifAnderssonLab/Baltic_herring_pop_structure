@@ -1,0 +1,1633 @@
+# Title: The fine-grained population structure of herring in the Baltic Sea reflects the distribution of spawning in time and space
+# Author: Jake Goodall
+# Date: 2025-August
+# Description: Scripts for generating Figure 1 plots
+
+# ===============================
+#  Script for Figure 2 plot
+# ===============================
+
+# The following catalogs the scripts for the publication figures for the Baltic Clines paper
+setwd("path/to/directory/")
+
+# PART 1: Curate the data in R
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(vcfR)
+library(ggplot2)
+
+# Import the base allele frequency dataset
+Swedish_ECoast_Allele_Freq <- read.csv("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025_AFreqs_ALLSamples.tsv", sep="")
+
+
+View(Swedish_ECoast_Allele_Freq)
+
+# Import the corresponding VCF file so I can bind the CHROM and POS values onto the allele frequencies
+vcf_unfiltered_ref <- vcfR::read.vcfR("/path/to/directory/BalticSea_EastCoast_Herring_Goodall2025.vcf")
+
+# Perform a left join to match "ID" and update "BP" in MEGA_Contrast
+merged_data_ref <- merge(vcf_unfiltered_ref@fix, Swedish_ECoast_Allele_Freq, by = "ID")
+
+# Clean up the data a little bit
+merged_data_ref <- merged_data_ref[, -c(6:11)]
+colnames(merged_data_ref)[2] <- "CHROM"
+colnames(merged_data_ref)[4] <- "REF"
+colnames(merged_data_ref)[5] <- "ALT"
+
+# Reorder the data based on CHR and POS and filter unplaced scaffolds
+# Sort data by chromosome and base pair position
+sorted_data_ref <- merged_data_ref %>%
+  arrange(CHROM, POS)
+
+sorted_data_ref$CHROM_POS <- paste(sorted_data_ref$CHROM, sorted_data_ref$POS, sep = "_")
+View(sorted_data_ref)
+
+sorted_data_ref <- sorted_data_ref[, c(173,2,3,4,5,7:172)] # This is ready to use now
+
+
+## -------  Script for figure 2a -------
+
+# PART 2: Run a PCA with all the data
+
+# Extract the numeric columns for PCA
+numeric_columns <- sorted_data_ref[, 6:ncol(sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("/path/to/directory/PerLocation_Metadata.txt")
+
+# Convert the $ID columns to upper case
+#TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("KAL05_SPRING", "KAL6_SPRING", "KAL05_AUTUMN", "KAL6_AUTUMN"), ggplot_data$Sample, NA)
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = -PC2, color = Season, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+
+#################################################################################################
+
+# Identify samples with Count <= 10
+TEMP_AF_Labels$count <- as.numeric(TEMP_AF_Labels$count)
+invalid_samples <- TEMP_AF_Labels$ID[TEMP_AF_Labels$count < 10]
+
+# Print the invalid samples
+print("Samples with Count <= 1:")
+print(invalid_samples)
+
+# Convert column names in sorted_data_ref to upper case
+colnames(sorted_data_ref) <- toupper(colnames(sorted_data_ref))
+
+# Convert invalid_samples to upper case
+invalid_samples <- toupper(invalid_samples)
+
+# Determine which columns should be removed from sorted_data_ref
+columns_to_remove <- which(colnames(sorted_data_ref) %in% invalid_samples)
+
+# Print the columns to be removed
+print("Columns to be removed:")
+print(columns_to_remove)
+
+# Create a new sorted_data_ref file with the specified columns removed
+filtered_sorted_data_ref <- sorted_data_ref[, -columns_to_remove]
+
+
+# PART 2: Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- filtered_sorted_data_ref[, 6:ncol(filtered_sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- filtered_sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("Temp_AF_Labels.txt")
+
+# Convert the $ID columns to upper case
+TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("KAL05_SPRING", "KAL6_SPRING", "STH36A_SPRING"), ggplot_data$Sample, NA)
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = PC1, y = PC2, color = Season, size = Count, label = label)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 0.5, hjust = -0.2) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    #title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  scale_size_continuous(range = c(3, 12)) +  # Adjust the range: minimum size = 3, maximum size = 12
+  stat_ellipse() +
+  theme_classic()
+
+
+## Look at Spring samples only
+
+# Identify samples with Count <= 1
+TEMP_AF_Labels$count <- as.numeric(TEMP_AF_Labels$count)
+invalid_samples <- TEMP_AF_Labels$ID[TEMP_AF_Labels$Season == "Autumn"]
+
+# Print the invalid samples
+print("Samples with Count <= 1:")
+print(invalid_samples)
+
+# Convert column names in sorted_data_ref to upper case
+colnames(sorted_data_ref) <- toupper(colnames(sorted_data_ref))
+
+# Convert invalid_samples to upper case
+invalid_samples <- toupper(invalid_samples)
+
+# Determine which columns should be removed from sorted_data_ref
+columns_to_remove <- which(colnames(sorted_data_ref) %in% invalid_samples)
+
+# Print the columns to be removed
+print("Columns to be removed:")
+print(columns_to_remove)
+
+# Create a new sorted_data_ref file with the specified columns removed
+Spring_filtered_sorted_data_ref <- sorted_data_ref[, -columns_to_remove]
+
+
+# PART 2: Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- Spring_filtered_sorted_data_ref[, 6:ncol(Spring_filtered_sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- Spring_filtered_sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(pca_result$x)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("Temp_AF_Labels.txt")
+
+# Convert the $ID columns to upper case
+TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#7570b3","#1b9e77","#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("VAB01_SPRING", "VAB02_SPRING", "VAB15_SPRING", "VAB18_SPRING", "VAB20_SPRING", "VAB21_SPRING", "VAB22_SPRING"), ggplot_data$Sample, NA)
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("VAB01_SPRING", "VAB02_SPRING", "VAN07_SPRING"), ggplot_data$Sample, NA)
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("KAL05_SPRING", "KAL06_SPRING", "STH36A_SPRING"), ggplot_data$Sample, NA)
+
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = -PC2, color = Season, size = Count, label = label)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 1, hjust = 1, na.rm = TRUE, size = 3) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+###
+
+# Identify samples with Count <= 1
+TEMP_AF_Labels$count <- as.numeric(TEMP_AF_Labels$count)
+invalid_samples <- TEMP_AF_Labels$ID[TEMP_AF_Labels$count < 6]
+
+# Print the invalid samples
+print("Samples with Count <= 1:")
+print(invalid_samples)
+
+# Convert column names in sorted_data_ref to upper case
+colnames(sorted_data_ref) <- toupper(colnames(Spring_filtered_sorted_data_ref))
+
+# Convert invalid_samples to upper case
+invalid_samples <- toupper(invalid_samples)
+
+# Determine which columns should be removed from sorted_data_ref
+columns_to_remove <- which(colnames(Spring_filtered_sorted_data_ref) %in% invalid_samples)
+
+# Print the columns to be removed
+print("Columns to be removed:")
+print(columns_to_remove)
+
+# Create a new sorted_data_ref file with the specified columns removed
+Spring_minnumber_sorted_data_ref <- Spring_filtered_sorted_data_ref[, -columns_to_remove]
+
+
+# PART 2: Run a PCA with all the data
+# Extract the numeric columns for PCA
+numeric_columns <- Spring_minnumber_sorted_data_ref[, 6:ncol(Spring_minnumber_sorted_data_ref)]
+
+# Transpose the data
+transposed_data <- t(numeric_columns)
+colnames(transposed_data) <- Spring_minnumber_sorted_data_ref$CHROM_POS
+
+# Calculate the proportion of missing values in each column
+missing_col_proportion <- colMeans(is.na(transposed_data))
+
+# Print only values greater than 0
+print(as.matrix(missing_col_proportion[missing_col_proportion > 0])) # This shows all the ones with missing and their value
+missing_col <- names(missing_col_proportion[missing_col_proportion > 0])
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% missing_col]
+
+ncol(transposed_data)
+## ALT_AF 4773 -> 4400 SNP present after "missing data" filtering
+
+# Run the test again to ensure you detect any new zeros
+# Identify columns with all zero values
+zero_columns <- colnames(transposed_data)[colSums(transposed_data == 0) == nrow(transposed_data)]
+
+# Print the identified columns
+print("Columns with all zero values:")
+print(zero_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% zero_columns]
+
+one_columns <- colnames(transposed_data)[colSums(transposed_data == 1) == nrow(transposed_data)]
+# Print the identified columns
+print("Columns with all zero values:")
+print(one_columns)
+
+transposed_data <- transposed_data[, !colnames(transposed_data) %in% one_columns]
+
+ncol(transposed_data)
+
+# ALT_AF 4400 -> 3920 SNP present after "all zero/one" filtering 
+
+# Curate the Data for the PCA
+# Perform PCA with only the first 30 principal components
+pca_result <- prcomp(transposed_data, scale. = TRUE, rank = 10)
+
+# Access the principal components
+principal_components <- pca_result$x
+
+# Convert the data frame to a tibble to handle row names
+principal_components <- as_tibble(principal_components)
+rownames(principal_components) <- rownames(principal_components)
+
+# Create a new column for row names
+principal_components$ID <- rownames(pca_result$x)
+
+# Load in some metadata for the AF data
+TEMP_AF_Labels <- read.delim("Temp_AF_Labels.txt")
+
+# Convert the $ID columns to upper case
+TEMP_AF_Labels$ID <- toupper(TEMP_AF_Labels$ID)
+principal_components$ID <- toupper(principal_components$ID)
+
+# Now merge all the metadata into the PC outputs
+principal_components_FINAL <- merge(principal_components, TEMP_AF_Labels, by = "ID")
+
+# Print summary of PCA
+summary(pca_result)
+
+# Overview of full datasets
+
+library(ggplot2)
+# Define the manual color scheme
+manual_colors <- c("#1b9e77", "#7570b3", "#e6ab02","#e7298a", "#66a61e", "#e6ab02", "red")
+
+# Create a data frame for ggplot
+ggplot_data <- data.frame(
+  PC1 = principal_components_FINAL[, 2],
+  PC2 = principal_components_FINAL[, 3],
+  Count = principal_components_FINAL$count,
+  Season = principal_components_FINAL$Season,
+  Sample = principal_components_FINAL$ID) 
+
+# Plot using ggplot
+ggplot(ggplot_data, aes(x = -PC1, y = PC2, color = Season, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  #geom_text(vjust = 1.5, hjust = 1) +  # adjust these values for optimal label positioning
+  labs(
+    col = "Regions Sampled",
+    size = "Count",
+    title = "PCA of transposed data",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  scale_color_manual(values = manual_colors) + 
+  stat_ellipse() +
+  theme_classic()
+
+###
+
+# Perform K-means clustering
+library(ggplot2)
+
+# Perform K-means clustering
+pc_data_SpawningEco <- ggplot_data[, c("PC1", "PC2")]
+
+#set.seed(123)  # for reproducibility
+k_range <- 1:10  # example range of k values
+kmeans_results <- lapply(k_range, function(k) {
+  kmeans(pc_data_SpawningEco, centers = k)
+})
+wss <- sapply(kmeans_results, function(km) km$tot.withinss)
+
+# Create a data frame for ggplot
+elbow_data <- data.frame(k = k_range, WSS = wss)
+
+# Plot using ggplot2
+ggplot(elbow_data, aes(x = k, y = WSS)) +
+  geom_line(color = "black") +
+  geom_point(color = "black", size = 3) +
+  theme_classic() +
+  scale_x_continuous(breaks = seq(1, 10, by = 1)) +  # Ensure intervals of 1 on the x-axis
+  geom_text(
+    data = subset(elbow_data, k == 3),  # Select only the point where x = 2
+    aes(label = "Optimal K"),
+    hjust = -0.2,                         # Position label above the point
+    angle = 45, 
+    color = "red",                      # Color of the label
+    fontface = "bold"                   # Make the label bold
+  ) +
+  labs(
+    title = "Elbow Method for Optimal k",
+    x = "Number of clusters (k)",
+    y = "Within-cluster sum of squares (WSS)"
+  )
+
+# Perform K-means clustering with k = 2
+k <- 3
+kmeans_result <- kmeans(pc_data_SpawningEco, centers = k)
+
+# View cluster centers
+print(kmeans_result$centers)
+
+# Assign cluster labels to each data point
+cluster_labels <- kmeans_result$cluster
+
+# Verify the changes
+print(unique(ggplot_data$Cluster))
+
+# Add cluster labels to original ggplot_data
+ggplot_data$Cluster <- as.factor(cluster_labels)
+
+library(ggrepel)
+
+# Create PCA plot with clusters colored
+p <- ggplot(ggplot_data, aes(x = -PC1, y = PC2, color = Cluster, size = Count, label = Sample)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 0.5, hjust = -0.5, size = 3, na.rm = TRUE) +  # Add labels for all samples
+    labs(
+    col = "Cluster",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  stat_ellipse() +
+  scale_color_manual(values = c("purple", "red", "blue", "green", "blue", "pink")) +  # Adjust colors as needed
+  theme_classic()
+
+# Display the plot
+print(p)
+
+# Create a new column to indicate whether the sample should be labeled
+ggplot_data$label <- ifelse(ggplot_data$Sample %in% c("STH36A_SPRING", "KAL6_SPRING", "KAL05_SPRING", "GAV17_SPRING", "BLE07_SPRING", "UPP08_SPRING"), ggplot_data$Sample, NA)
+
+# Create PCA plot with clusters colored
+p <- ggplot(ggplot_data[-c(43) ,], aes(x = -PC1, y = PC2, color = Cluster, size = Count, label = label)) +
+  geom_point(shape = 16) +
+  geom_text(vjust = 0.5, hjust = 0.5, angle = 45, size = 3, na.rm = TRUE) +  # Add labels for all samples
+  labs(
+    col = "Cluster",
+    #title = "PCA Plot with K-means Clustering (k = 6)",
+    x = paste("PC 1 (", round(100 * pca_result$sdev[1]^2 / sum(pca_result$sdev^2), 2), "% variance explained)"),
+    y = paste("PC 2 (", round(100 * pca_result$sdev[2]^2 / sum(pca_result$sdev^2), 2), "% variance explained)")
+  ) +
+  stat_ellipse() +
+  scale_size_continuous(range = c(3, 9)) +  # Adjust the range: minimum size = 3, maximum size = 12
+  scale_color_manual(values = c("purple", "red", "blue", "green", "blue", "pink")) +  # Adjust colors as needed
+  theme_classic()
+
+# Display the plot
+print(p)
+
+## -------  End figure 2a -------
+
+
+## -------  Script for figure 2b -------
+
+# Look at the cluster assignments based on the map
+library("ggplot2")
+theme_set(theme_bw())
+library("sf")
+library("rnaturalearth")
+library("rnaturalearthdata")
+library("ggspatial")
+
+library(tidyverse)
+library(ggplot2)
+library(sf)
+library(terra)
+library(tidyterra)
+library(rnaturalearth)
+library(geodata)
+library(sdmpredictors)
+library(marmap)
+
+#Get data
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Load in some of the map features
+rivers <- ne_load(scale = 10, type = "rivers_lake_centerlines", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+lakes <- ne_load(scale = 10, type = "lakes", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+lakes_europe <- ne_load(scale = 10, type = "lakes_europe", category = "physical", destdir = "/path/to/directory/10m_physical", returnclass = "sf")
+
+#Plot the map
+ggplot() +
+  
+  geom_sf(data = world, color = "black", fill = "lightgrey") +
+  geom_sf(data = rivers, colour = "#1f78b4", linewidth = 0.5) + 
+  geom_sf(data = lakes_europe, colour = "#1f78b4", linewidth = 0.5) + 
+  geom_sf(data = lakes, fill = "#1f78b4") + 
+  coord_sf(xlim = c(0, 29.0), ylim = c(55.0, 70.0))+
+  xlab("Longitude") + ylab("Latitude")+
+  annotation_scale(location = "tl", width_hint = 0.5) +
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering)
+
+
+## IMPORT THE METADATA
+SPRING_Post_KMeans_Assignment_ALL_Metadata <- read.delim("~/path/to/directory/SPRING_Post_KMeans_Assignment_ALL_Metadata.txt")
+
+# Convert Latitude and Longitude to numeric values
+SPRING_Post_KMeans_Assignment_ALL_Metadata <- SPRING_Post_KMeans_Assignment_ALL_Metadata %>%
+  mutate(
+    LATITUDE = as.numeric(LATITUDE),
+    LONGITUDE = as.numeric(LONGITUDE)
+)
+# Load necessary libraries
+library(dplyr)
+
+Spring_Map <- tibble(
+  lat = c(SPRING_Post_KMeans_Assignment_ALL_Metadata$LATITUDE),
+  long = c(SPRING_Post_KMeans_Assignment_ALL_Metadata$LONGITUDE),
+  sites = c(SPRING_Post_KMeans_Assignment_ALL_Metadata$Sample),
+  count = c(SPRING_Post_KMeans_Assignment_ALL_Metadata$Count),
+  cluster = c(SPRING_Post_KMeans_Assignment_ALL_Metadata$KMeansCluster)
+)
+
+Spring_Map$cluster <- as.factor(Spring_Map$cluster)
+
+# SPRING SAMPLES
+ggplot() +
+  geom_sf(data = world, color = "black", fill = "lightgrey") +
+  geom_sf(data = lakes, fill = "#1f78b4") + 
+  geom_sf(data = lakes_europe, fill = "#1f78b4") +
+  coord_sf(xlim = c(10, 25.0), ylim = c(55.0, 67.0)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme(text = element_text(size = 10)) +
+  annotation_scale(location = "br", width_hint = 0.5, text_cex = 0.8) +
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  geom_point(
+    data = Spring_Map,
+    aes(x = long, y = lat, size = count, color = cluster)) +
+  scale_size_continuous(range = c(1, 4)) +  # Adjust the range of point sizes
+  scale_color_manual(values = c("purple", "red", "blue", "green", "black"))  # Adjust the colors as needed
+
+# Load the ggrepel package for better label management
+library(ggrepel)
+
+# Add a column to indicate which samples should be labeled
+Spring_Map$label <- ifelse(Spring_Map$sites %in% c("STH36A_SPRING", "KAL6_SPRING", "KAL05_SPRING", "GAV17_SPRING", "BLE07_SPRING", "UPP08_SPRING"), Spring_Map$sites, NA)
+
+# SPRING SAMPLES with labels
+ggplot() +
+  geom_sf(data = world, color = "black", fill = "lightgrey") +
+  geom_sf(data = lakes, fill = "#1f78b4") + 
+  geom_sf(data = lakes_europe, fill = "#1f78b4") +
+  coord_sf(xlim = c(10, 25.0), ylim = c(55.0, 67.0)) +
+  xlab("Longitude") + ylab("Latitude") +
+  theme(text = element_text(size = 10)) +
+  annotation_scale(location = "br", width_hint = 0.5, text_cex = 0.8) +
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"),
+                         style = north_arrow_fancy_orienteering) +
+  geom_point(
+    data = Spring_Map,
+    aes(x = long, y = lat, size = count, color = cluster)) +
+  geom_text_repel(
+    data = Spring_Map,
+    aes(x = long, y = lat, label = label),
+    size = 3,  # Adjust label size
+    box.padding = 0.3,  # Padding around labels
+    point.padding = 0.2,  # Padding around points
+    max.overlaps = 10  # Limit label overlaps
+  ) +
+  scale_size_continuous(range = c(1, 4)) +  # Adjust the range of point sizes
+  scale_color_manual(values = c("purple", "red", "blue", "green", "black"))  # Adjust the colors as needed
+
+## -------  End figure 2b -------
+
+
+## -------  Script for figure 2c-e -------
+
+# Change to UPPMAX to run the ChiSquared and Heatmaps
+  cd /path/to/directory/
+
+# The following script allows you to extract specific individuals or SNP from a VCF
+# Load up the required programs
+ml load bioinfo-tools
+module load plink/1.90b4.9
+module load bcftools/1.14
+module load vcftools/0.1.15
+
+# Extract specific samples from the vcf file
+bcftools view -S List_of_SPRING_Samples_with_KMeans_Assignments.txt BalticSea_EastCoast_Herring_Goodall2025.vcf > SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations.vcf
+
+# Generate chi-squared contrasts between all KMeans assigned groups
+# Convert VCF to binary PLINK format
+plink --vcf SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations.vcf --allow-extra-chr --double-id --make-bed --out SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations
+
+#Define Case/Control Groups
+## Edit the .fam file manually to define phenotypes.
+## Open dataset.fam in a text editor or spreadsheet, which should have the following headers:
+
+# e.g. CONTRAST 1 vs 2 
+# Perform the chi-squared test
+plink --bfile SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations --assoc --adjust --allow-extra-chr --allow-no-sex --autosome-num 26 --chr 1-26 --double-id --out SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast
+
+# Calculate Allele frequencies per group
+plink --bfile SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations --freq case-control --allow-extra-chr --allow-no-sex --autosome-num 26 --chr 1-26 --double-id --out SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast_freq_by_group
+
+###
+
+# R Script to Visualize Results
+
+library(qqman)
+library(ggplot2)
+
+# Set working directory
+setwd("/path/to/directory/")
+
+# Load and Merge Data
+# Load association results and allele frequency data
+assoc_1v2 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast.assoc.adjusted", header = TRUE)
+assoc_1v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v3_Contrast.assoc.adjusted", header = TRUE)
+assoc_2v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_2v3_Contrast.assoc.adjusted", header = TRUE)
+
+freq_1v2 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast_freq_by_group.frq.cc", header = TRUE)
+freq_1v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v3_Contrast_freq_by_group.frq.cc", header = TRUE)
+freq_2v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_2v3_Contrast_freq_by_group.frq.cc", header = TRUE)
+
+
+# Import the corresponding VCF file so I can bind the CHROM and POS values onto the allele frequencies
+vcf_unfiltered <- vcfR::read.vcfR("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations.vcf")
+
+# Convert the VCF fixed fields to a data frame
+vcf_df <- as.data.frame(vcf_unfiltered@fix)
+
+# Rename the "ID" column to "SNP" so it matches the freq file
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+
+# Now you can safely merge based on "SNP"
+merged_data_1v2 <- merge(vcf_df, freq_1v2, by = "SNP")
+merged_data_1v3 <- merge(vcf_df, freq_1v3, by = "SNP")
+merged_data_2v3 <- merge(vcf_df, freq_2v3, by = "SNP")
+
+# Merge all the data together
+merged_1v2 <- merge(assoc_1v2, merged_data_1v2, by = "SNP")
+merged_1v3 <- merge(assoc_1v3, merged_data_1v3, by = "SNP")
+merged_2v3 <- merge(assoc_2v3, merged_data_2v3, by = "SNP")
+
+# Calculate delta allele frequency
+merged_1v2$delta_AF <- abs(merged_1v2$MAF_A - merged_1v2$MAF_U)
+merged_1v3$delta_AF <- abs(merged_1v3$MAF_A - merged_1v3$MAF_U)
+merged_2v3$delta_AF <- abs(merged_2v3$MAF_A - merged_2v3$MAF_U)
+
+# Create significance flag
+merged_1v2$significance <- ifelse(merged_1v2$BONF < 0.05, "significant", "non-significant")
+merged_1v3$significance <- ifelse(merged_1v3$BONF < 0.05, "significant", "non-significant")
+merged_2v3$significance <- ifelse(merged_2v3$BONF < 0.05, "significant", "non-significant")
+
+# Remove batch/suspect SNPs
+library(dplyr)
+List_of_Problem_Polar_Loci <- read.delim("~/path/to/directory/List_of_Problem_Polar_Loci.txt")
+
+merged_1v2$CHROM <- as.numeric(merged_1v2$CHROM)  # Ensure CHROM is numeric
+merged_1v2$POS <- as.numeric(merged_1v2$POS)  # Ensure POS is numeric
+merged_1v2 <- merged_1v2 %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+merged_1v3$CHROM <- as.numeric(merged_1v3$CHROM)  # Ensure CHROM is numeric
+merged_1v3$POS <- as.numeric(merged_1v3$POS)  # Ensure POS is numeric
+merged_1v3 <- merged_1v3 %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+merged_2v3$CHROM <- as.numeric(merged_2v3$CHROM)  # Ensure CHROM is numeric
+merged_2v3$POS <- as.numeric(merged_2v3$POS)  # Ensure POS is numeric
+merged_2v3 <- merged_2v3 %>%
+  anti_join(List_of_Problem_Polar_Loci, by = c("CHROM", "POS"))
+
+
+# Plot
+library(ggplot2)
+
+ggplot(merged_1v2, aes(x = SNP, y = -log10(BONF))) +
+  geom_point(data = subset(merged_1v2, significance == "non-significant"),
+             color = "grey", alpha = 0.5) +
+  geom_point(data = subset(merged_1v2, significance == "significant"),
+             aes(color = delta_AF), alpha = 0.7) +
+  scale_color_gradient(low = "blue", high = "red", na.value = "grey") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  facet_wrap(~CHR.y, scales = "free_x", nrow = 1) +
+  theme_minimal() +
+  labs(title = "Manhattan Plot with delta Allele Frequency Coloring",
+       x = "Genomic Position (SNPs ordered)",
+       y = "-log10(Bonferroni-adjusted p-value)",
+       color = "delta Allele Freq")
+
+
+
+ggplot(merged_1v3, aes(x = SNP, y = -log10(BONF))) +
+  geom_point(data = subset(merged_1v3, significance == "non-significant"),
+             color = "grey", alpha = 0.5) +
+  geom_point(data = subset(merged_1v3, significance == "significant"),
+             aes(color = delta_AF), alpha = 0.7) +
+  scale_color_gradient(low = "blue", high = "red", na.value = "grey") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  facet_wrap(~CHR.y, scales = "free_x", nrow = 1) +
+  theme_minimal() +
+  labs(title = "Manhattan Plot with Δ Allele Frequency Coloring",
+       x = "Genomic Position (SNPs ordered)",
+       y = "-log10(Bonferroni-adjusted p-value)",
+       color = "Δ Allele Freq")
+
+
+
+ggplot(merged_2v3, aes(x = SNP, y = -log10(BONF))) +
+  geom_point(data = subset(merged_2v3, significance == "non-significant"),
+             color = "grey", alpha = 0.5) +
+  geom_point(data = subset(merged_2v3, significance == "significant"),
+             aes(color = delta_AF), alpha = 0.7) +
+  scale_color_gradient(low = "blue", high = "red", na.value = "grey") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+  facet_wrap(~CHR.y, scales = "free_x", nrow = 1) +
+  theme_minimal() +
+  labs(title = "Manhattan Plot with Δ Allele Frequency Coloring",
+       x = "Genomic Position (SNPs ordered)",
+       y = "-log10(Bonferroni-adjusted p-value)",
+       color = "Δ Allele Freq")
+
+
+### Improve the visualization of the Manhattan plots
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # Required for using multiple color scales
+
+# Sort the data by chromosome and position
+merged_2v3 <- merged_2v3 %>%
+  arrange(CHR.x, POS)
+
+# Create column for alternating colors for non-significant points
+merged_2v3 <- merged_2v3 %>%
+  mutate(PointColor = ifelse(significance == "non-significant",
+                             ifelse(CHR.x %% 2 == 0, "black", "grey"), NA))
+
+# Create column for color gradient based on delta_AF for significant points
+merged_2v3 <- merged_2v3 %>%
+  mutate(PlotColor = ifelse(significance == "significant", delta_AF, NA))
+
+# Set the factor levels of SNP to preserve genomic order
+merged_2v3$SNP <- factor(merged_2v3$SNP, levels = unique(merged_2v3$SNP))
+
+# Split data into subsets and re-apply SNP factor levels
+non_sig <- merged_2v3 %>%
+  filter(significance == "non-significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(merged_2v3$SNP)))
+
+sig <- merged_2v3 %>%
+  filter(significance == "significant") %>%
+  mutate(SNP = factor(SNP, levels = levels(merged_2v3$SNP)))
+
+# Plot using ggplot2
+ggplot() +
+  # Non-significant points with alternating black/grey
+  geom_point(
+    data = non_sig,
+    aes(x = SNP, y = -log10(BONF), color = PointColor),
+    size = 1, alpha = 0.7
+  ) +
+  scale_color_manual(values = c("grey", "black"), guide = "none") +
+  new_scale_color() +  # Required to apply a new color scale for significant points
+
+  # Significant points with delta_AF color gradient
+  geom_point(
+    data = sig,
+    aes(x = SNP, y = -log10(BONF), color = PlotColor),
+    size = 1.5, alpha = 0.8
+  ) +
+  scale_color_gradient(low = "blue", high = "red", name = "Δ Allele Freq") +
+
+  # Add horizontal significance threshold
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+
+  # Ensure SNP order is preserved on x-axis
+  scale_x_discrete(drop = FALSE) +
+
+  # Plot appearance settings
+  theme_classic() +
+  labs(
+    title = "Manhattan Plot with Δ Allele Frequency Coloring",
+    x = "Genomic Position (SNPs ordered)",
+    y = "-log10(Bonferroni-adjusted p-value)"
+  ) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+
+# Filter for positions with -log10(BONF) > 200
+merged_2v3_high_sig <- merged_2v3 %>%
+  filter(-log10(BONF) > 30)
+
+###
+
+library(ggplot2)
+library(dplyr)
+library(ggnewscale)  # Required for using multiple color scales
+
+# Function to process and plot data for a given comparison
+process_and_plot <- function(data, comparison_name) {
+  # Sort the data by chromosome and position
+  data <- data %>%
+    arrange(CHR.x, POS)
+  
+  # Create column for alternating colors for non-significant points
+  data <- data %>%
+    mutate(PointColor = ifelse(significance == "non-significant",
+                               ifelse(CHR.x %% 2 == 0, "black", "grey"), NA))
+  
+  # Create column for color gradient based on delta_AF for significant points
+  data <- data %>%
+    mutate(PlotColor = ifelse(significance == "significant", delta_AF, NA))
+  
+  # Set the factor levels of SNP to preserve genomic order
+  data$SNP <- factor(data$SNP, levels = unique(data$SNP))
+  
+  # Split data into subsets and re-apply SNP factor levels
+  non_sig <- data %>%
+    filter(significance == "non-significant") %>%
+    mutate(SNP = factor(SNP, levels = levels(data$SNP)))
+  
+  sig <- data %>%
+    filter(significance == "significant") %>%
+    mutate(SNP = factor(SNP, levels = levels(data$SNP)))
+  
+  # Plot using ggplot2
+  plot <- ggplot() +
+    # Non-significant points with alternating black/grey
+    geom_point(
+      data = non_sig,
+      aes(x = SNP, y = -log10(BONF), color = PointColor),
+      size = 1, alpha = 0.7
+    ) +
+    scale_color_manual(values = c("grey", "black"), guide = "none") +
+    new_scale_color() +  # Required to apply a new color scale for significant points
+    
+    # Significant points with delta_AF color gradient
+    geom_point(
+      data = sig,
+      aes(x = SNP, y = -log10(BONF), color = PlotColor),
+      size = 1.5, alpha = 0.8
+    ) +
+    scale_color_gradient(low = "blue", high = "red", name = "Δ Allele Freq") +
+    
+    # Add horizontal significance threshold
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black") +
+    
+    # Ensure SNP order is preserved on x-axis
+    scale_x_discrete(drop = FALSE) +
+    
+    # Plot appearance settings
+    theme_classic() +
+    labs(
+      title = paste("Manhattan Plot for", comparison_name, "Comparison"),
+      x = "Genomic Position (SNPs ordered)",
+      y = "-log10(Bonferroni-adjusted p-value)"
+    ) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank()
+    )
+  
+  # Return the plot
+  return(plot)
+}
+
+# Process and plot for each comparison
+plot_1v2 <- process_and_plot(merged_1v2, "1v2")
+plot_1v3 <- process_and_plot(merged_1v3, "1v3")
+plot_2v3 <- process_and_plot(merged_2v3, "2v3")
+
+# Display the plots
+print(plot_2v3) # plot 2c
+print(plot_1v3) # plot 2d
+print(plot_1v2) # plot 2e
+
+# Optional: Export Delta AF Table
+write.table(merged_1v2[, c("SNP", "CHR.y", "POS", "BONF", "MAF_A", "MAF_U", "delta_AF")],
+            file = "southern_vs_central_assoc_with_freqs.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Optional: Export Delta AF Table
+write.table(merged_1v3[, c("SNP", "CHR.y", "POS", "BONF", "MAF_A", "MAF_U", "delta_AF")],
+            file = "southern_vs_northern_assoc_with_freqs.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+# Optional: Export Delta AF Table
+write.table(merged_2v3[, c("SNP", "CHR.y", "POS", "BONF", "MAF_A", "MAF_U", "delta_AF")],
+            file = "central_vs_northern_assoc_with_freqs.txt", sep = "\t", row.names = FALSE, quote = FALSE)
+
+###
+
+# Create a new column combining CHROM and POS
+merged_1v2 <- merged_1v2 %>%
+  mutate(CHROM_POS = paste(CHR.y, POS, sep = "_"))  # Combine CHROM and POS into a new column
+
+merged_1v3 <- merged_1v3 %>%
+  mutate(CHROM_POS = paste(CHR.y, POS, sep = "_"))  # Combine CHROM and POS into a new column
+
+merged_2v3 <- merged_2v3 %>%
+  mutate(CHROM_POS = paste(CHR.y, POS, sep = "_"))  # Combine CHROM and POS into a new column
+
+# Load required libraries
+library(dplyr)
+library(purrr)
+
+# Filter for significant SNPs
+# Keep only "significant" rows
+sig_1v2 <- merged_1v2 %>% filter(significance == "significant") %>% pull(CHROM_POS)
+sig_1v3 <- merged_1v3 %>% filter(significance == "significant") %>% pull(CHROM_POS)
+sig_2v3 <- merged_2v3 %>% filter(significance == "significant") %>% pull(CHROM_POS)
+
+# Combine all CHROM_POS vectors into one
+all_significant_snps <- unique(c(sig_1v2, sig_1v3, sig_2v3))
+
+# Convert to a single-column data frame
+all_significant_snps_df <- data.frame(CHROM_POS = all_significant_snps)
+
+all_significant_snps_df <- all_significant_snps_df %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+# View the result
+print(all_significant_snps_df)
+
+# Shared across all three
+shared_all <- Reduce(intersect, list(sig_1v2, sig_1v3, sig_2v3))
+
+# Shared between each pair
+shared_1v2_1v3 <- intersect(sig_1v2, sig_1v3)
+shared_1v2_2v3 <- intersect(sig_1v2, sig_2v3)
+shared_1v3_2v3 <- intersect(sig_1v3, sig_2v3)
+
+# Unique to each comparison
+unique_1v2 <- setdiff(sig_1v2, union(sig_1v3, sig_2v3))
+unique_1v3 <- setdiff(sig_1v3, union(sig_1v2, sig_2v3))
+unique_2v3 <- setdiff(sig_2v3, union(sig_1v2, sig_1v3))
+
+# SNPs that differentiate Cluster 1 from both 2 and 3
+diff_cluster1 <- intersect(sig_1v2, sig_1v3) %>%
+  setdiff(sig_2v3)
+
+diff_cluster1_df <- data.frame(CHROM_POS = diff_cluster1)
+
+# SNPs that differentiate Cluster 2 from both 1 and 3
+diff_cluster2 <- intersect(sig_1v2, sig_2v3) %>%
+  setdiff(sig_1v3)
+
+diff_cluster2_df <- data.frame(CHROM_POS = diff_cluster2)
+
+
+
+# SNPs that differentiate Cluster 3 from both 1 and 2
+diff_cluster3 <- intersect(sig_1v3, sig_2v3) %>%
+  setdiff(sig_1v2)
+
+diff_cluster3_df <- data.frame(CHROM_POS = diff_cluster3)
+
+# Create a data frame for shared SNPs across all three comparisons
+shared_all_df <- data.frame(CHROM_POS = shared_all)
+
+diff_cluster1_incl_alldiffer <- bind_rows(diff_cluster1_df, shared_all_df) %>%
+  distinct()
+diff_cluster2_incl_alldiffer <- bind_rows(diff_cluster2_df, shared_all_df) %>%
+  distinct()
+
+diff_cluster3_incl_alldiffer <- bind_rows(diff_cluster3_df, shared_all_df) %>%
+  distinct()
+
+###
+
+# Combine all merged datasets (you can adjust this if needed)
+all_merged <- bind_rows(
+  merged_1v2 %>% mutate(comparison = "1v2"),
+  merged_1v3 %>% mutate(comparison = "1v3"),
+  merged_2v3 %>% mutate(comparison = "2v3")
+)
+
+# Keep only significant SNPs
+all_sig <- all_merged %>%
+  filter(significance == "significant")
+
+cluster1_snps <- all_sig %>%
+  filter(CHROM_POS %in% diff_cluster1)
+
+cluster2_snps <- all_sig %>%
+  filter(CHROM_POS %in% diff_cluster2)
+
+cluster3_snps <- all_sig %>%
+  filter(CHROM_POS %in% diff_cluster3)
+
+# Combine all cluster-specific SNPs
+heatmap_data <- bind_rows(cluster1_snps, cluster2_snps, cluster3_snps)
+
+# Pivot to wide format for heatmap: CHROM_POS vs comparison
+library(tidyr)
+
+heatmap_matrix <- heatmap_data %>%
+  dplyr::select(CHROM_POS, comparison, delta_AF) %>%
+  pivot_wider(names_from = comparison, values_from = delta_AF, values_fill = 0) %>%
+  column_to_rownames("CHROM_POS") %>%
+  as.matrix()
+
+
+######
+######
+cat("Shared across all 3:", length(shared_all), "\n")
+cat("Unique to 1v2:", length(unique_1v2), "\n")
+cat("Unique to 1v3:", length(unique_1v3), "\n")
+cat("Unique to 2v3:", length(unique_2v3), "\n")
+# Print results
+cat("SNPs differentiating Cluster 1 from 2 & 3:", length(diff_cluster1), "\n")
+cat("SNPs differentiating Cluster 2 from 1 & 3:", length(diff_cluster2), "\n")
+cat("SNPs differentiating Cluster 3 from 1 & 2:", length(diff_cluster3), "\n")
+
+### Annotated the diagnostic SNPs 
+# Load necessary libraries
+library(rtracklayer)
+library(GenomicRanges)
+library(biomaRt)
+library(dplyr)
+
+# Seperate out the cluster specific SNPs
+diff_cluster1 <- as.data.frame(diff_cluster1)
+colnames(diff_cluster1)[1] <- "CHROM_POS"
+colnames(shared_all_df)[1] <- "CHROM_POS"
+
+all_sig_df <- as.data.frame(all_sig$CHROM_POS) %>% distinct()
+colnames(all_sig_df)[1] <- "CHROM_POS"
+
+all_sig_df <- all_sig_df %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+diff_cluster1_incl_alldiffer <- diff_cluster1_incl_alldiffer %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+
+diff_cluster2_incl_alldiffer <- diff_cluster2_incl_alldiffer %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+
+diff_cluster3_incl_alldiffer <- diff_cluster3_incl_alldiffer %>%
+  mutate(CHROM_POS_copy = CHROM_POS) %>%  # Keep original
+  separate(CHROM_POS_copy, into = c("CHROM", "POS"), sep = "_") %>%
+  mutate(CHROM = as.numeric(CHROM), POS = as.numeric(POS))
+
+# Load SNP data
+#SpringOutl_anno <- all_significant_snps_df[, c(2, 3)]
+SpringOutl_anno <- diff_cluster3_incl_alldiffer[, c(2, 3)]
+
+# Convert CHROM and POS to numeric
+SpringOutl_anno$CHR <- as.numeric(SpringOutl_anno$CHROM)
+SpringOutl_anno$POS <- as.numeric(SpringOutl_anno$POS)
+
+# Convert SNP data into GRanges object (specific positions)
+snp_GR <- GRanges(seqnames = SpringOutl_anno$CHR,
+                  ranges = IRanges(start = SpringOutl_anno$POS, end = SpringOutl_anno$POS),
+                  strand = "*")
+
+# Load GTF file and filter annotations to relevant chromosomes
+cluhar_v2.0.2_gtf <- import("/path/to/directory/Clupea_harengus.Ch_v2.0.2.108.gtf")
+unique(SpringOutl_anno$CHR)
+# [1]  1  3  4  5  6  9 10 11 12 15 16 17 18 19 24
+
+gtf_GR <- as(cluhar_v2.0.2_gtf, "GRanges")
+
+# Find overlaps between SNP positions and GTF annotations
+snp_gtf_hits <- findOverlaps(snp_GR, gtf_GR)
+
+# Create a data frame with SNP positions and matching GTF annotations
+snp_annotations <- data.frame(
+  SNP_Chr = seqnames(snp_GR[queryHits(snp_gtf_hits)]),
+  SNP_Pos = start(snp_GR[queryHits(snp_gtf_hits)]),
+  Feature_Type = gtf_GR$type[subjectHits(snp_gtf_hits)],
+  Gene_ID = gtf_GR$gene_id[subjectHits(snp_gtf_hits)],
+  stringsAsFactors = FALSE
+)
+
+# Keep only SNPs overlapping with genes
+snp_annotations_genes <- subset(snp_annotations, Feature_Type == "gene")
+
+# Annotate with gene names using biomaRt
+mart <- useMart(biomart = "ENSEMBL_MART_ENSEMBL", 
+                dataset = "charengus_gene_ensembl", 
+                host = "https://oct2022.archive.ensembl.org")
+
+attributes = listAttributes(mart)
+attributes[1:5,]
+
+gene_info <- getBM(attributes = c("external_gene_name", "ensembl_gene_id", "description",
+                                  "start_position", "end_position", "cds_length", "strand", "gene_biotype"),
+                   filters = "ensembl_gene_id",
+                   values = unique(snp_annotations_genes$Gene_ID),
+                   mart = mart)
+
+# Add all gene information to SNP annotations
+snp_annotations_genes <- merge(
+  snp_annotations_genes, 
+  gene_info, 
+  by.x = "Gene_ID", 
+  by.y = "ensembl_gene_id", 
+  all.x = TRUE
+)
+
+# Renaming columns for clarity (optional)
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "external_gene_name"] <- "Gene_Name"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "description"] <- "Gene_Description"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "start_position"] <- "Gene_Start"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "end_position"] <- "Gene_End"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "cds_length"] <- "CDS_Length"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "strand"] <- "Gene_Strand"
+colnames(snp_annotations_genes)[colnames(snp_annotations_genes) == "gene_biotype"] <- "Gene_Biotype"
+
+# Remove duplicates based on unique combinations of SNP_Chr and SNP_Pos
+snp_annotations_genes <- snp_annotations_genes %>%
+  distinct(SNP_Chr, SNP_Pos, .keep_all = TRUE)
+
+unique(snp_annotations_genes$SNP_Chr)
+
+View(snp_annotations_genes)
+
+
+# Export significant SNPs for Spring to a CSV file
+write.table(
+  snp_annotations_genes,
+  "~/path/to/directory/Significant_SNPs_NORTH_ANNOTATED.txt",
+  row.names = FALSE
+)
+
+## -------  END Script for figure 2c-e -------
+
+
+## -------  Script for figure 2f -------
+# Identify the columns to extract
+# Extract the first 5 columns
+columns_to_keep <- colnames(sorted_data_ref)[1:5]
+
+# Add columns that match ggplot_data$Sample
+sample_columns <- colnames(sorted_data_ref)[colnames(sorted_data_ref) %in% ggplot_data$Sample]
+
+# Combine the columns to keep
+columns_to_extract <- c(columns_to_keep, sample_columns)
+
+# Create the new working dataset
+working_dataset <- sorted_data_ref[, columns_to_extract]
+
+# Verify the new dataset
+print(dim(working_dataset))  # Check dimensions of the new dataset
+print(head(working_dataset))  # Preview the first few rows
+
+# Create a heatmap of all allele frequencies
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Prepare the data
+# Extract the first 5 columns and numeric columns (allele frequencies)
+allele_freq_data <- working_dataset[, -c(1:5)]
+
+# Transpose the allele frequency data for easier manipulation
+allele_freq_data <- as.data.frame(t(allele_freq_data))
+colnames(allele_freq_data) <- working_dataset$CHROM_POS
+allele_freq_data$Sample <- rownames(allele_freq_data)
+
+# Merge with ggplot_data to add Cluster information
+heatmap_data <- merge(allele_freq_data, ggplot_data[, c("Sample", "Cluster")], by = "Sample")
+
+# Reorder the data by Cluster
+heatmap_data <- heatmap_data %>%
+  arrange(Cluster, Sample)  # Order by Cluster and then by Sample
+
+# Melt the data for ggplot2
+heatmap_data_long <- heatmap_data %>%
+  pivot_longer(
+    cols = -c(Sample, Cluster),  # Exclude Sample and Cluster columns from melting
+    names_to = "SNP",            # Column for SNP names
+    values_to = "Allele_Freq"    # Column for allele frequencies
+  )
+
+# Plot the heatmap
+ggplot(heatmap_data_long, aes(x = SNP, y = Sample, fill = Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red", na.value = "white") +  # Gradient for allele frequencies
+  facet_grid(rows = vars(Cluster), scales = "free_y", space = "free_y") +  # Group samples by Cluster
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),  # Hide x-axis labels for SNPs
+    axis.ticks.x = element_blank(), # Hide x-axis ticks
+    axis.text.y = element_text(size = 6),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Allele Frequency Heatmap Grouped by Cluster",
+    x = "SNPs",
+    y = "Samples",
+    fill = "Allele Freq"
+  )
+
+###
+### Create a heatmap of averaged per KMeans cluster allele frequencies
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Prepare the data
+# Extract allele frequency columns and transpose the data
+allele_freq_data <- working_dataset[, -c(1:5)]
+allele_freq_data <- as.data.frame(t(allele_freq_data))
+colnames(allele_freq_data) <- working_dataset$CHROM_POS
+allele_freq_data$Sample <- rownames(allele_freq_data)
+
+# Merge with ggplot_data to add Cluster information
+heatmap_data <- merge(allele_freq_data, ggplot_data[, c("Sample", "Cluster")], by = "Sample")
+
+# Replace NaN values with NA
+heatmap_data <- heatmap_data %>%
+  mutate(across(everything(), ~ ifelse(is.nan(.), NA, .)))  # Replace NaN with NA
+
+# Polarize the data
+# Calculate the average for each column (excluding Sample and Cluster)
+column_means <- colMeans(heatmap_data[, -c(1, 2)], na.rm = TRUE)
+
+# Identify columns where the mean is less than 0.5
+columns_to_invert <- names(column_means[column_means < 0.5])
+
+# Apply the formula to polarize the data
+heatmap_data[, columns_to_invert] <- lapply(heatmap_data[, columns_to_invert], function(column) {
+  ifelse(!is.na(column), abs(1 - column), NA)  # Apply ABS(1 - value) to non-NA values
+})
+
+# Calculate mean allele frequencies for each cluster
+averaged_data <- heatmap_data %>%
+  pivot_longer(
+    cols = -c(Sample, Cluster),  # Exclude Sample and Cluster columns from melting
+    names_to = "SNP",            # Column for SNP names
+    values_to = "Allele_Freq"    # Column for allele frequencies
+  ) %>%
+  group_by(Cluster, SNP) %>%
+  summarize(Mean_Allele_Freq = mean(Allele_Freq, na.rm = TRUE), .groups = "drop")  # Calculate mean allele frequency
+
+# Plot the averaged heatmap
+ggplot(averaged_data, aes(x = SNP, y = Cluster, fill = Mean_Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red", na.value = "white") +  # Gradient for allele frequencies
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),  # Hide x-axis labels for SNPs
+    axis.ticks.x = element_blank(), # Hide x-axis ticks
+    axis.text.y = element_text(size = 10),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Averaged Allele Frequency Heatmap by Cluster",
+    x = "SNPs",
+    y = "Cluster",
+    fill = "Mean Allele Freq"
+  )
+
+##############################################################################
+## Filter the data down to only SNPs significant in chi-squared tests
+# Load the chi-squared test results
+setwd("/path/to/directory/")
+# Load association results and allele frequency data
+assoc_1v2 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast.assoc.adjusted", header = TRUE)
+assoc_1v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v3_Contrast.assoc.adjusted", header = TRUE)
+assoc_2v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_2v3_Contrast.assoc.adjusted", header = TRUE)
+
+freq_1v2 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v2_Contrast_freq_by_group.frq.cc", header = TRUE)
+freq_1v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_1v3_Contrast_freq_by_group.frq.cc", header = TRUE)
+freq_2v3 <- read.table("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations_KMeans_2v3_Contrast_freq_by_group.frq.cc", header = TRUE)
+
+
+# Import the corresponding VCF file so I can bind the CHROM and POS values onto the allele frequencies
+vcf_unfiltered <- vcfR::read.vcfR("SWE_ECoast_SPRING_Indivs_From_KMeans_Assigned_Locations.vcf")
+
+# Convert the VCF fixed fields to a data frame
+vcf_df <- as.data.frame(vcf_unfiltered@fix)
+
+# Rename the "ID" column to "SNP" so it matches the freq file
+colnames(vcf_df)[which(names(vcf_df) == "ID")] <- "SNP"
+
+# Now you can safely merge based on "SNP"
+merged_data_1v2 <- merge(vcf_df, freq_1v2, by = "SNP")
+merged_data_1v3 <- merge(vcf_df, freq_1v3, by = "SNP")
+merged_data_2v3 <- merge(vcf_df, freq_2v3, by = "SNP")
+
+# Merge all the data together
+merged_1v2 <- merge(assoc_1v2, merged_data_1v2, by = "SNP")
+merged_1v3 <- merge(assoc_1v3, merged_data_1v3, by = "SNP")
+merged_2v3 <- merge(assoc_2v3, merged_data_2v3, by = "SNP")
+
+# Calculate delta allele frequency
+merged_1v2$delta_AF <- abs(merged_1v2$MAF_A - merged_1v2$MAF_U)
+merged_1v3$delta_AF <- abs(merged_1v3$MAF_A - merged_1v3$MAF_U)
+merged_2v3$delta_AF <- abs(merged_2v3$MAF_A - merged_2v3$MAF_U)
+
+# Create significance flag
+merged_1v2$significance <- ifelse(merged_1v2$BONF < 0.05, "significant", "non-significant")
+merged_1v3$significance <- ifelse(merged_1v3$BONF < 0.05, "significant", "non-significant")
+merged_2v3$significance <- ifelse(merged_2v3$BONF < 0.05, "significant", "non-significant")
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Create CHROM_POS in the merged datasets
+merged_1v2 <- merged_1v2 %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))
+
+merged_1v3 <- merged_1v3 %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))
+
+merged_2v3 <- merged_2v3 %>%
+  mutate(CHROM_POS = paste(CHROM, POS, sep = "_"))
+
+# Extract significant SNPs from all comparisons
+significant_snps <- bind_rows(
+  merged_1v2 %>% filter(significance == "significant") %>% dplyr::select(CHROM_POS, CHROM, POS),
+  merged_1v3 %>% filter(significance == "significant") %>% dplyr::select(CHROM_POS, CHROM, POS),
+  merged_2v3 %>% filter(significance == "significant") %>% dplyr::select(CHROM_POS, CHROM, POS)
+) %>%
+  distinct()  # Keep only unique SNPs
+
+# Filter heatmap_data to include only significant SNPs
+filtered_heatmap_data <- heatmap_data %>%
+  pivot_longer(
+    cols = -c(Sample, Cluster),  # Exclude Sample and Cluster columns from melting
+    names_to = "CHROM_POS",      # Column for CHROM_POS names
+    values_to = "Allele_Freq"    # Column for allele frequencies
+  ) %>%
+  inner_join(significant_snps, by = "CHROM_POS")  # Retain only significant SNPs
+
+# Create the heatmap
+ggplot(filtered_heatmap_data, aes(x = CHROM_POS, y = Sample, fill = Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red", na.value = "white") +  # Gradient for allele frequencies
+  facet_grid(rows = vars(Cluster), scales = "free_y", space = "free_y") +  # Group samples by Cluster
+  theme_minimal() +
+  theme(
+    axis.text.x = element_blank(),  # Hide x-axis labels for SNPs
+    axis.ticks.x = element_blank(), # Hide x-axis ticks
+    axis.text.y = element_text(size = 6),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Heatmap of Significant SNPs by Cluster",
+    x = "SNPs (CHROM_POS)",
+    y = "Samples",
+    fill = "Allele Freq"
+  )
+
+### Create the averaged heatmap of significant SNPs
+# Calculate mean allele frequencies for each cluster
+averaged_data <- filtered_heatmap_data %>%
+  group_by(Cluster, CHROM_POS) %>%
+  summarize(Mean_Allele_Freq = mean(Allele_Freq, na.rm = TRUE), .groups = "drop")  # Calculate mean allele frequency
+
+# Create the averaged heatmap
+ggplot(averaged_data, aes(x = CHROM_POS, y = Cluster, fill = Mean_Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red", na.value = "white") +  # Gradient for allele frequencies
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),  # Hide x-axis labels for SNPs
+    axis.ticks.x = element_blank(), # Hide x-axis ticks
+    axis.text.y = element_text(size = 10),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Averaged Allele Frequency Heatmap by Cluster",
+    x = "SNPs (CHROM_POS)",
+    y = "Cluster",
+    fill = "Mean Allele Freq"
+  )
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Split CHROM_POS into CHROM and POS
+averaged_data <- averaged_data %>%
+  separate(CHROM_POS, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(
+    CHROM = as.numeric(CHROM),  # Ensure CHROM is numeric
+    POS = as.numeric(POS)       # Ensure POS is numeric
+  )
+
+# Explicitly set CHROM as a factor ordered numerically
+averaged_data <- averaged_data %>%
+  mutate(CHROM = factor(CHROM, levels = 1:26)) %>%  # Set CHROM levels explicitly
+  arrange(CHROM, POS)  # Order by CHROM and then by POS
+
+# Create the averaged heatmap with CHROM labels
+ggplot(averaged_data, aes(x = CHROM_POS, y = Cluster, fill = Mean_Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5, na.value = "grey") +  # Gradient for allele frequencies
+  scale_x_discrete(labels = averaged_data$CHROM_POS) +  # Display only CHROM as x-axis labels
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 1),  # Rotate CHROM labels for readability
+    axis.ticks.x = element_line(),  # Show x-axis ticks
+    axis.text.y = element_text(size = 10),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Averaged Allele Frequency Heatmap by Cluster with Chromosome Annotations",
+    x = "Chromosomes",
+    y = "Cluster",
+    fill = "Mean Allele Freq"
+  )
+
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# Split CHROM_POS into CHROM and POS
+averaged_data <- averaged_data %>%
+  separate(CHROM_POS, into = c("CHROM", "POS"), sep = "_", remove = FALSE) %>%
+  mutate(
+    CHROM = as.numeric(CHROM),  # Ensure CHROM is numeric
+    POS = as.numeric(POS)       # Ensure POS is numeric
+  )
+
+# Sort by CHROM and POS, then explicitly set CHROM_POS order
+averaged_data <- averaged_data %>%
+  arrange(CHROM, POS) %>%  # Sort by CHROM and POS
+  mutate(CHROM_POS = factor(CHROM_POS, levels = unique(CHROM_POS)))  # Explicitly set CHROM_POS order
+
+# Create the heatmap with enforced CHROM_POS order
+ggplot(averaged_data, aes(x = CHROM_POS, y = Cluster, fill = Mean_Allele_Freq)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0.5, na.value = "grey") +  # Gradient for allele frequencies
+  scale_x_discrete(drop = FALSE) +  # Ensure all CHROM_POS values are displayed
+  theme_classic() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, size = 6),  # Rotate CHROM labels for readability
+    axis.ticks.x = element_line(),  # Show x-axis ticks
+    axis.text.y = element_text(size = 10),  # Adjust y-axis text size for readability
+    strip.text.y = element_text(angle = 0)  # Keep cluster labels horizontal
+  ) +
+  labs(
+    title = "Averaged Allele Frequency Heatmap by Cluster with Correct Ordering",
+    x = "Chromosomes (CHROM_POS)",
+    y = "Cluster",
+    fill = "Mean Allele Freq"
+  )
+
+  ## -------  END Script for figure 2f -------
